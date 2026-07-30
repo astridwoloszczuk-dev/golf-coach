@@ -467,6 +467,9 @@ function parseAuthInput(raw){
   const v = (raw || '').trim();
   if (!v) return null;
   if (/^[0-9]{6}$/.test(v)) return {kind:'otp', token:v};
+  // A bare token hash, e.g. one minted straight from the admin API when the
+  // email quota is spent. Long hex, nothing else on the line.
+  if (/^[0-9a-f]{20,}$/i.test(v)) return {kind:'link', token:v, type:'magiclink'};
   // Tokens already in the URL as a #fragment (the wrong browser opened it and
   // you copied the address bar afterwards) — usable as-is, no exchange needed.
   const at = v.match(/access_token=([^&\s]+)/);
