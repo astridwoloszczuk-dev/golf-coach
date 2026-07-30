@@ -83,6 +83,7 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .light.on_track{background:var(--gn);box-shadow:0 0 8px rgba(74,222,128,.5)}
 .light.at_risk{background:var(--ye);box-shadow:0 0 8px rgba(251,191,36,.45)}
 .light.stalled{background:var(--rd);box-shadow:0 0 8px rgba(248,113,113,.45)}
+.light.achieved{background:var(--bl);box-shadow:0 0 8px rgba(96,165,250,.5)}
 .goal .gt{flex:1;min-width:0}
 .goal .gt b{font-size:14px;font-weight:650;line-height:1.35;display:block}
 .goal .gt p{font-size:12.5px;color:var(--mu);margin-top:3px;line-height:1.45;white-space:pre-wrap}
@@ -92,6 +93,7 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .spill.sel[data-s=on_track]{border-color:var(--gn);color:var(--gn);background:rgba(74,222,128,.14)}
 .spill.sel[data-s=at_risk]{border-color:var(--ye);color:var(--ye);background:rgba(251,191,36,.14)}
 .spill.sel[data-s=stalled]{border-color:var(--rd);color:var(--rd);background:rgba(248,113,113,.14)}
+.spill.sel[data-s=achieved]{border-color:var(--bl);color:var(--bl);background:rgba(96,165,250,.14)}
 
 /* ── week grid (commitments) ─────────────────────────────────── */
 .wkgrid{display:flex;flex-direction:column;gap:7px}
@@ -301,6 +303,10 @@ const STATUSES = [
   {id:'on_track', label:'On track'},
   {id:'at_risk',  label:'At risk'},
   {id:'stalled',  label:'Stalled'},
+  // A goal that has landed. Not the same as on-track, and deleting it would
+  // erase the fact that it landed — the record of what she has actually done
+  // is half the point of keeping goals at all.
+  {id:'achieved', label:'Achieved'},
 ];
 const DAY_LONG = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];

@@ -66,6 +66,7 @@ async function renderGoals(){
           <b>${esc(g.title)}</b>
           ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}
           ${canLight ? statusPickHtml(g) : `<p style="color:var(--mu);font-size:11px;margin-top:5px;text-transform:uppercase;letter-spacing:.8px">${esc(statusLabel(g.status))}</p>`}
+          ${suggestionHtml(g)}
         </div>
         ${canEdit ? `<button class="btn btns" onclick="editGoal(${g.id},'${g.horizon}')">✎</button>` : ''}
       </div>`;
@@ -76,6 +77,37 @@ async function renderGoals(){
 }
 
 const statusLabel = s => (STATUSES.find(x=>x.id===s)||{}).label || s;
+
+// Claude's proposed status. It writes `suggested_status`, never `status` — the
+// light stays a human call, so the suggestion is an argument you accept or bin,
+// not a value that changed itself under you. Dismissing costs nothing; next
+// Sunday simply proposes again if the case still holds.
+function suggestionHtml(g){
+  if (!g.suggested_status || g.suggested_status === g.status) return '';
+  const when = g.suggested_at ? new Date(g.suggested_at).toLocaleDateString(undefined,{day:'numeric',month:'short'}) : '';
+  return `<div style="margin-top:9px;padding:9px 11px;border:1px solid rgba(192,132,252,.4);
+      background:rgba(192,132,252,.07);border-radius:9px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--pu);margin-bottom:4px">
+      Claude suggests: ${esc(statusLabel(g.suggested_status))}${when?' · '+when:''}</div>
+    ${g.suggested_reason?`<div style="font-size:12.5px;line-height:1.5;color:var(--tx)">${esc(g.suggested_reason)}</div>`:''}
+    <div class="rbtns" style="margin-top:9px">
+      <button class="btn btns btnp" onclick="acceptSuggestion(${g.id})">Accept</button>
+      <button class="btn btns" onclick="dismissSuggestion(${g.id})">Dismiss</button>
+    </div></div>`;
+}
+
+async function acceptSuggestion(id){
+  const g = GOALS.find(x=>x.id===id);
+  if (!g) return;
+  await upd('goals','id=eq.'+id, {status: g.suggested_status, suggested_status:null,
+    suggested_reason:null, suggested_at:null, updated_at:new Date().toISOString()});
+  toast('Moved to '+statusLabel(g.suggested_status));
+  renderGoals();
+}
+async function dismissSuggestion(id){
+  await upd('goals','id=eq.'+id, {suggested_status:null, suggested_reason:null, suggested_at:null});
+  renderGoals();
+}
 
 function statusPickHtml(g){
   return `<div class="statuspick">` + STATUSES.map(s =>
@@ -1154,12 +1186,17 @@ async function renderSummary(){
   h += `</div>`;
 
   /* — goals + next tournament — */
-  h += `<div class="card"><div class="ct">Goal status</div>`;
-  for (const g of (goals||[])) h += `<div class="goal"><div class="light ${g.status}"></div>
-    <div class="gt"><b style="font-size:13.5px">${esc(g.title)}</b>
-      <p style="font-size:11px;text-transform:uppercase;letter-spacing:.7px">${esc(HORIZONS.find(x=>x.id===g.horizon).label)} · ${esc(statusLabel(g.status))}</p></div></div>`;
-  if (!(goals||[]).length) h += `<div class="empty">No goals set yet.</div>`;
-  h += `</div>`;
+  // Only what needs attention: NOW goals that are at-risk or stalled. A wall of
+  // green lights is noise, and the 2- and 5-year horizons don't move week to
+  // week — if nothing is wrong, this card doesn't appear at all.
+  const attention = (goals||[]).filter(g => g.horizon === 'now' && (g.status === 'at_risk' || g.status === 'stalled'));
+  if (attention.length){
+    h += `<div class="card"><div class="ct">Goals needing attention</div>`;
+    for (const g of attention) h += `<div class="goal"><div class="light ${g.status}"></div>
+      <div class="gt"><b style="font-size:13.5px">${esc(g.title)}</b>
+        <p style="font-size:11px;text-transform:uppercase;letter-spacing:.7px">${esc(statusLabel(g.status))}</p></div></div>`;
+    h += `</div>`;
+  }
 
   if ((tourn||[]).length){
     const t = tourn[0], days = daysBetween(todayYmd(), t.date);
