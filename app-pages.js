@@ -43,7 +43,12 @@ let GOALS = [];
 async function renderGoals(){
   GOALS = await sel('goals', 'select=*&order=horizon.asc,sort.asc,id.asc') || [];
   const canEdit = ME.role === 'teacher' || GOALS_STUDENT_WRITABLE;
-  const canLight = ME.role === 'teacher';
+  // The spec puts the status light in the teacher's hands — it is a judgement
+  // about the coaching relationship, not a computed metric. But until Wes
+  // onboards there IS no teacher, and a light nobody can move is just decoration.
+  // So while goals are hers (goals_student_writable), the light is hers too. It
+  // transfers to Wes the moment that flag flips, with no code change.
+  const canLight = ME.role === 'teacher' || (ME.role === 'student' && GOALS_STUDENT_WRITABLE);
 
   let h = '';
   if (ME.role === 'student' && !GOALS_STUDENT_WRITABLE)
