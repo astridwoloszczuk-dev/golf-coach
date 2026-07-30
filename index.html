@@ -219,10 +219,16 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
     </div>
 
     <div id="auth-step-code" class="hide">
-      <div class="fr"><label>6-digit code (if the email has one)</label>
-        <input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></div>
+      <div class="fr"><label>Paste the link from the email — or its 6-digit code</label>
+        <textarea id="auth-code" rows="2" autocomplete="one-time-code"
+          placeholder="https://...supabase.co/auth/v1/verify?token=...   or   123456"></textarea></div>
       <button class="btn btnp" style="width:100%" id="auth-verify">Sign in</button>
       <button class="btn" style="width:100%;margin-top:8px" id="auth-back">Use a different email</button>
+      <p style="font-size:12px;color:var(--mu);line-height:1.5;margin-top:12px">
+        On Android the emailed link opens in whatever the system browser is, so the
+        sign-in lands somewhere you are not. In your mail app <b>long-press the link
+        &rarr; Copy link address</b> (do not tap it &mdash; it is single-use), then paste
+        it above to sign in <i>here</i>.</p>
     </div>
 
     <div id="auth-msg" class="msg"></div>
@@ -400,8 +406,21 @@ async function validToken(){
 }
 
 // The magic link lands back here as #access_token=…&refresh_token=…
+// — or as #error=…, which is what a spent or expired link gives you. That case
+// used to drop you silently on the sign-in screen, indistinguishable from never
+// having tried, which is its own small cruelty. Now it says so.
+let HASH_ERROR = null;
 function consumeHashTokens(){
   const h = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+  if (h.includes('error')) {
+    const p = new URLSearchParams(h);
+    const code = p.get('error_code') || p.get('error') || '';
+    HASH_ERROR = /expired|otp_expired|access_denied/i.test(code)
+      ? 'That link was already used, or it expired. Request a new one — and copy it rather than tapping it.'
+      : (p.get('error_description') || code || 'Sign-in failed.').replace(/\+/g, ' ');
+    history.replaceState(null, '', location.pathname + location.search);
+    return false;
+  }
   if (!h.includes('access_token')) return false;
   const p = new URLSearchParams(h);
   saveSession({
@@ -438,18 +457,54 @@ async function sendLink(){
   el('auth-send').disabled = false;
 }
 
+// Accepts EITHER a 6-digit OTP or the whole magic-link URL pasted in.
+//
+// The URL path exists because of a real Android problem: the emailed link opens
+// in the system browser (Samsung Internet, typically), so the session lands in a
+// browser you are not using and Chrome still looks logged out. Copying the link
+// and pasting it here moves the sign-in to whichever browser you are actually in.
+function parseAuthInput(raw){
+  const v = (raw || '').trim();
+  if (!v) return null;
+  if (/^[0-9]{6}$/.test(v)) return {kind:'otp', token:v};
+  // Tokens already in the URL as a #fragment (the wrong browser opened it and
+  // you copied the address bar afterwards) — usable as-is, no exchange needed.
+  const at = v.match(/access_token=([^&\s]+)/);
+  if (at) {
+    const rt = v.match(/refresh_token=([^&\s]+)/);
+    return {kind:'tokens', access_token: at[1], refresh_token: rt ? rt[1] : null};
+  }
+  // An unopened magic link. Supabase has used both `token` and `token_hash`.
+  const m = v.match(/[?&](token_hash|token)=([^&\s]+)/);
+  if (m) {
+    const t = v.match(/[?&]type=([^&\s]+)/);
+    return {kind:'link', token: decodeURIComponent(m[2]), type: t ? t[1] : 'magiclink'};
+  }
+  return null;
+}
+
 async function verifyCode(){
-  const email = (localStorage.getItem('gc_email')||gv('auth-email')).toLowerCase();
-  const token = gv('auth-code');
-  if (token.length < 6) { authMsg('Enter the 6-digit code.','err'); return; }
+  const email = (localStorage.getItem('gc_email') || gv('auth-email')).toLowerCase();
+  const parsed = parseAuthInput(el('auth-code').value);
+  if (!parsed) {
+    authMsg('That is neither the code nor the link. Paste the whole link, starting https://', 'err');
+    return;
+  }
   el('auth-verify').disabled = true;
-  authMsg('<span class="spin"></span> Signing in…');
+  authMsg('<span class="spin"></span> Signing in...');
   try {
-    const j = await authFetch('verify', {type:'email', email, token});
-    saveSession(j);
+    if (parsed.kind === 'tokens') {
+      saveSession({access_token: parsed.access_token, refresh_token: parsed.refresh_token, expires_in: 3600});
+    } else if (parsed.kind === 'link') {
+      saveSession(await authFetch('verify', {type: parsed.type, token_hash: parsed.token}));
+    } else {
+      saveSession(await authFetch('verify', {type: 'email', email, token: parsed.token}));
+    }
     await start();
   } catch(e) {
-    authMsg('That code didn\'t work: '+esc(e.message)+'<br>Try the link in the email instead.','err');
+    authMsg('That did not work: ' + esc(e.message)
+      + '<br><br>A link that has been opened once is spent. Request a new one and '
+      + 'copy it rather than tapping it.', 'err');
     el('auth-verify').disabled = false;
   }
 }
@@ -599,6 +654,7 @@ function showAuth(msg){
   el('app').classList.add('hide');
   el('auth').classList.remove('hide');
   if (msg) authMsg(esc(msg),'err');
+  else if (HASH_ERROR) { authMsg(esc(HASH_ERROR),'err'); HASH_ERROR = null; }
   const saved = localStorage.getItem('gc_email');
   if (saved && el('auth-email')) el('auth-email').value = saved;
 }
