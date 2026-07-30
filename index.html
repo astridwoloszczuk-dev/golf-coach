@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Golf Coach">
+<meta name="theme-color" content="#0d1117">
+<link rel="apple-touch-icon" href="icon-192.svg">
+<link rel="manifest" href="manifest.json">
+<title>Golf Coach</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--sf:#161b22;--s2:#1c2330;--s3:#232b3a;
+  --b1:rgba(255,255,255,0.08);--b2:rgba(255,255,255,0.18);
+  --tx:#e6edf3;--mu:#7d8590;--ac:#c8a96e;
+  --gn:#4ade80;--gn2:#86efac;--ye:#fbbf24;--rd:#f87171;--bl:#60a5fa;--pu:#c084fc;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;color:var(--tx);
+  background:var(--bg);min-height:100vh;-webkit-text-size-adjust:100%;overscroll-behavior-y:contain}
+button{font-family:inherit}
+.hide{display:none!important}
+
+/* ── header + burger ─────────────────────────────────────────── */
+.hdr{position:sticky;top:0;z-index:60;background:var(--bg);border-bottom:1px solid var(--b1);
+  padding:calc(env(safe-area-inset-top) + 12px) 16px 11px;display:flex;align-items:center;gap:12px}
+.hdr h1{font-size:17px;font-weight:700;flex:1;line-height:1.2}
+.hdr .sub{font-size:11px;color:var(--mu);font-weight:400;margin-top:2px}
+.burger{width:38px;height:38px;border:1px solid var(--b2);border-radius:9px;background:transparent;
+  color:var(--tx);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;flex-shrink:0}
+.burger span{display:block;width:17px;height:2px;background:currentColor;border-radius:2px}
+.menu{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);display:none}
+.menu.on{display:block}
+.menu-panel{position:absolute;top:0;right:0;bottom:0;width:min(280px,82vw);background:var(--sf);
+  border-left:1px solid var(--b1);padding:calc(env(safe-area-inset-top) + 16px) 0 20px;overflow-y:auto}
+.menu-who{padding:0 18px 14px;border-bottom:1px solid var(--b1);margin-bottom:8px}
+.menu-who .n{font-size:15px;font-weight:700}
+.menu-who .r{font-size:11px;color:var(--ac);text-transform:uppercase;letter-spacing:1.2px;margin-top:3px}
+.menu a{display:block;padding:13px 18px;color:var(--tx);text-decoration:none;font-size:15px;cursor:pointer;border:none;background:none;width:100%;text-align:left}
+.menu a.on{color:var(--ac);font-weight:700;background:rgba(200,169,110,.08)}
+.menu .sep{height:1px;background:var(--b1);margin:8px 0}
+.menu .out{color:var(--rd);font-size:13px}
+
+/* ── layout primitives ───────────────────────────────────────── */
+.pg{padding:14px 16px calc(env(safe-area-inset-bottom) + 40px);display:none}
+.pg.on{display:block}
+.card{background:var(--sf);border:1px solid var(--b1);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.ct{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--mu);margin-bottom:10px;font-weight:600;
+  display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mu{color:var(--mu)}
+.empty{color:var(--mu);font-size:13px;padding:10px 0;line-height:1.5}
+.btn{padding:10px 16px;border:1px solid var(--b2);border-radius:8px;background:transparent;color:var(--tx);cursor:pointer;font-size:14px;font-weight:600}
+.btnp{background:var(--ac);color:#0d1117;border-color:transparent}
+.btnb{background:var(--bl);color:#0d1117;border-color:transparent}
+.btns{padding:6px 12px;font-size:12px;border-radius:6px;font-weight:600}
+.btnd{color:var(--rd);border-color:rgba(248,113,113,.3)}
+.btn:disabled{opacity:.45;cursor:default}
+.rbtns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+select,input[type=text],input[type=email],input[type=number],input[type=date],textarea{
+  width:100%;padding:9px 12px;border:1px solid var(--b2);border-radius:8px;
+  background:var(--s2);color:var(--tx);font-size:16px;font-family:inherit;-webkit-appearance:none}
+textarea{resize:vertical;min-height:64px;line-height:1.5}
+.fr{margin-bottom:10px}
+.fr label{display:block;font-size:11px;color:var(--mu);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.dl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--mu);margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--b1)}
+
+/* ── week nav ────────────────────────────────────────────────── */
+.wknav{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.wknav button{width:38px;height:38px;border:1px solid var(--b2);border-radius:9px;background:var(--sf);
+  color:var(--tx);font-size:17px;cursor:pointer;flex-shrink:0}
+.wknav .lbl{flex:1;text-align:center}
+.wknav .lbl b{display:block;font-size:14px;font-weight:700}
+.wknav .lbl span{display:block;font-size:11px;color:var(--mu);margin-top:1px}
+
+/* ── goal status lights ──────────────────────────────────────── */
+.goal{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--b1)}
+.goal:last-child{border-bottom:none}
+.light{width:11px;height:11px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.light.on_track{background:var(--gn);box-shadow:0 0 8px rgba(74,222,128,.5)}
+.light.at_risk{background:var(--ye);box-shadow:0 0 8px rgba(251,191,36,.45)}
+.light.stalled{background:var(--rd);box-shadow:0 0 8px rgba(248,113,113,.45)}
+.goal .gt{flex:1;min-width:0}
+.goal .gt b{font-size:14px;font-weight:650;line-height:1.35;display:block}
+.goal .gt p{font-size:12.5px;color:var(--mu);margin-top:3px;line-height:1.45;white-space:pre-wrap}
+.statuspick{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.spill{padding:4px 10px;border-radius:999px;border:1px solid var(--b2);background:var(--s2);color:var(--mu);font-size:11px;cursor:pointer}
+.spill.sel{font-weight:700}
+.spill.sel[data-s=on_track]{border-color:var(--gn);color:var(--gn);background:rgba(74,222,128,.14)}
+.spill.sel[data-s=at_risk]{border-color:var(--ye);color:var(--ye);background:rgba(251,191,36,.14)}
+.spill.sel[data-s=stalled]{border-color:var(--rd);color:var(--rd);background:rgba(248,113,113,.14)}
+
+/* ── week grid (commitments) ─────────────────────────────────── */
+.wkgrid{display:flex;flex-direction:column;gap:7px}
+.day{background:var(--sf);border:1px solid var(--b1);border-radius:11px;padding:9px 11px;min-height:56px;transition:border-color .12s,background .12s}
+.day.today{border-color:rgba(200,169,110,.55)}
+.day.drop{border-color:var(--ac);background:rgba(200,169,110,.10)}
+.day-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.day-h b{font-size:12px;font-weight:700;letter-spacing:.4px}
+.day-h span{font-size:10.5px;color:var(--mu)}
+.day.today .day-h b{color:var(--ac)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:7px 11px;border-radius:999px;
+  border:1px solid var(--b2);background:var(--s2);color:var(--tx);font-size:12.5px;cursor:grab;
+  touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.pill .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill.done{background:rgba(74,222,128,.16);border-color:rgba(74,222,128,.5);color:var(--gn2)}
+.pill.by-teacher{border-left:3px solid var(--bl)}
+.pill.by-claude{border-left:3px solid var(--pu)}
+.pill.by-student{border-left:3px solid var(--b2)}
+.pill.sel{outline:2px solid var(--ac);outline-offset:1px}
+.pill .sc{font-size:11px;font-weight:700;color:var(--ac)}
+.pill.drag{position:fixed;z-index:500;pointer-events:none;opacity:.94;box-shadow:0 8px 24px rgba(0,0,0,.55);cursor:grabbing}
+.tray{background:var(--s2);border:1px dashed var(--b2);border-radius:11px;padding:11px;margin-top:14px}
+.tray.drop{border-color:var(--ac);background:rgba(200,169,110,.10)}
+.tray .ct{margin-bottom:8px}
+.hintbar{font-size:11.5px;color:var(--ac);background:rgba(200,169,110,.09);border:1px solid rgba(200,169,110,.3);
+  border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.45}
+
+/* ── badges ──────────────────────────────────────────────────── */
+.bg{font-size:10px;padding:2px 7px;border-radius:6px;flex-shrink:0;font-weight:600;letter-spacing:.3px}
+.bg-teacher{background:rgba(96,165,250,.14);color:var(--bl)}
+.bg-claude{background:rgba(192,132,252,.14);color:var(--pu)}
+.bg-student{background:rgba(255,255,255,.07);color:var(--mu)}
+.bg-good{background:rgba(74,222,128,.15);color:var(--gn)}
+.bg-warn{background:rgba(251,191,36,.14);color:var(--ye)}
+.bg-bad{background:rgba(248,113,113,.15);color:var(--rd)}
+
+/* ── drills ──────────────────────────────────────────────────── */
+.drow{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--b1);cursor:pointer}
+.drow:last-child{border-bottom:none}
+.drow .dn{flex:1;min-width:0}
+.drow .dn b{font-size:14px;font-weight:600;display:block}
+.drow .dn span{font-size:11.5px;color:var(--mu);display:block;margin-top:2px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.chev{color:var(--mu);font-size:18px;flex-shrink:0}
+.spark{width:100%;height:74px;display:block}
+
+/* ── rounds (ported from goal-tracker) ───────────────────────── */
+.mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.mc{background:var(--sf);border:1px solid var(--b1);border-radius:10px;padding:10px;text-align:center}
+.mv{font-size:20px;font-weight:700}
+.ml{font-size:10px;color:var(--mu);margin-top:3px}
+.rrow{padding:10px 0;border-bottom:1px solid var(--b1)}
+.rrow:last-child{border-bottom:none}
+.good{color:var(--gn)}.warn{color:var(--ye)}.bad{color:var(--rd)}
+.bi{font-size:11px;padding:2px 7px;border-radius:6px;background:rgba(96,165,250,.12);color:var(--bl);flex-shrink:0}
+.bp{font-size:11px;padding:2px 7px;border-radius:6px;background:rgba(74,222,128,.15);color:var(--gn);flex-shrink:0}
+.fpill{padding:6px 11px;border:1px solid var(--b2);border-radius:999px;background:var(--s2);color:var(--mu);font-size:12px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.fpill.sel{background:rgba(74,222,128,.18);border-color:var(--gn);color:var(--gn);font-weight:600}
+.hole-box{background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.hole-hdr{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--ye);font-weight:600;margin-bottom:8px}
+.hole-r1{display:flex;gap:10px;align-items:flex-end;margin-bottom:8px}
+.hole-r2,.hole-r3{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px}
+.hole-nf{display:flex;flex-direction:column;gap:3px}
+.hole-lbl{font-size:10px;color:var(--ye);text-transform:uppercase;letter-spacing:.5px}
+.hole-num{width:56px;padding:6px 4px;font-size:20px;font-weight:700;text-align:center;border:1px solid var(--b2);
+  border-radius:7px;background:var(--bg);color:var(--tx);-webkit-appearance:none;-moz-appearance:textfield}
+.hole-num::-webkit-inner-spin-button,.hole-num::-webkit-outer-spin-button{-webkit-appearance:none}
+.hole-toggle{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 8px;border:1px solid var(--b2);
+  border-radius:6px;cursor:pointer;background:var(--bg);color:var(--tx);-webkit-tap-highlight-color:transparent;user-select:none}
+.hole-toggle input{width:17px;height:17px;accent-color:var(--gn)}
+
+/* ── tournaments ─────────────────────────────────────────────── */
+.trow{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--b1)}
+.trow:last-child{border-bottom:none}
+.tcd{text-align:center;min-width:46px;flex-shrink:0}
+.tcd b{font-size:22px;font-weight:800;line-height:1;display:block}
+.tcd span{font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:1px}
+.tscore{font-size:19px;font-weight:800;min-width:56px;text-align:right;flex-shrink:0}
+
+/* ── feedback panels ─────────────────────────────────────────── */
+.fb{white-space:pre-wrap;line-height:1.62;font-size:14px}
+.fb-claude{border-left:3px solid var(--pu);padding-left:12px}
+.fb-teacher{border-left:3px solid var(--bl);padding-left:12px}
+
+/* ── sheet (modal) ───────────────────────────────────────────── */
+.sheet{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.62);display:none;align-items:flex-end}
+.sheet.on{display:flex}
+.sheet-in{width:100%;max-height:88vh;overflow-y:auto;background:var(--sf);border-top:1px solid var(--b2);
+  border-radius:16px 16px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 22px)}
+.sheet-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px}
+.sheet-h b{font-size:17px;font-weight:700;line-height:1.3}
+.sheet-x{border:none;background:none;color:var(--mu);font-size:26px;line-height:1;cursor:pointer;padding:0 2px}
+@media(min-width:640px){.sheet{align-items:center;justify-content:center}
+  .sheet-in{max-width:560px;border-radius:16px;border:1px solid var(--b2)}}
+
+/* ── auth ────────────────────────────────────────────────────── */
+.authwrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.authbox{width:100%;max-width:360px}
+.authbox h2{font-size:22px;font-weight:700;margin-bottom:6px}
+.authbox p{font-size:13.5px;color:var(--mu);line-height:1.55;margin-bottom:18px}
+.msg{font-size:13px;line-height:1.5;margin-top:12px;min-height:19px}
+.msg.err{color:var(--rd)}.msg.ok{color:var(--gn)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 22px);
+  background:var(--s3);border:1px solid var(--b2);color:var(--tx);padding:11px 18px;border-radius:10px;
+  font-size:13px;z-index:600;box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;max-width:88vw;text-align:center}
+.toast.on{opacity:1}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--b2);border-top-color:var(--ac);
+  border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ══ AUTH ══════════════════════════════════════════════════════ -->
+<div id="auth" class="authwrap">
+  <div class="authbox">
+    <h2>⛳ Golf Coach</h2>
+    <p id="auth-lead">Sign in with your email. We'll send you a one-time link — one per device, then it remembers you.</p>
+
+    <div id="auth-step-email">
+      <div class="fr"><label>Email</label>
+        <input type="email" id="auth-email" autocomplete="email" inputmode="email" placeholder="you@example.com"></div>
+      <button class="btn btnp" style="width:100%" id="auth-send">Send me a link</button>
+    </div>
+
+    <div id="auth-step-code" class="hide">
+      <div class="fr"><label>6-digit code (if the email has one)</label>
+        <input type="text" id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></div>
+      <button class="btn btnp" style="width:100%" id="auth-verify">Sign in</button>
+      <button class="btn" style="width:100%;margin-top:8px" id="auth-back">Use a different email</button>
+    </div>
+
+    <div id="auth-msg" class="msg"></div>
+  </div>
+</div>
+
+<!-- ══ APP ═══════════════════════════════════════════════════════ -->
+<div id="app" class="hide">
+  <div class="hdr">
+    <div style="flex:1;min-width:0"><h1 id="pg-title">Agreed Goals</h1><div class="sub" id="pg-sub"></div></div>
+    <button class="burger" id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+
+  <div id="pg-goals"        class="pg"></div>
+  <div id="pg-week"         class="pg"></div>
+  <div id="pg-drills"       class="pg"></div>
+  <div id="pg-rounds"       class="pg"></div>
+  <div id="pg-tournaments"  class="pg"></div>
+  <div id="pg-summary"      class="pg"></div>
+  <div id="pg-feedback"     class="pg"></div>
+</div>
+
+<div class="menu" id="menu">
+  <div class="menu-panel" id="menu-panel">
+    <div class="menu-who"><div class="n" id="menu-name">—</div><div class="r" id="menu-role">—</div></div>
+    <a data-go="goals">Goals</a>
+    <a data-go="week">Weekly Commitments</a>
+    <a data-go="drills">Drills + Games</a>
+    <a data-go="rounds">Rounds</a>
+    <a data-go="tournaments">Tournaments</a>
+    <a data-go="summary">Weekly Summary</a>
+    <a data-go="feedback">Feedback</a>
+    <div class="sep"></div>
+    <a class="out" id="menu-out">Sign out</a>
+  </div>
+</div>
+
+<div class="sheet" id="sheet"><div class="sheet-in" id="sheet-in"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════
+   CONFIG
+   Anon key only — RLS carries the security (see schema.sql).
+   No phone numbers live in this repo: notifications name a RECIPIENT
+   and signal-server resolves the number at send time.
+   ═══════════════════════════════════════════════════════════════ */
+const SB_URL = 'https://ykbabwkyojlwculjmbrw.supabase.co';                    // astrid-efficiency
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrYmFid2t5b2psd2N1bGptYnJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MTg0NzMsImV4cCI6MjA5MjA5NDQ3M30.4lYnVcgv1o9OvXGMtrbjwKhXZ8Yybqln08aci_ZM9mI';
+const STUDENT_NAME = 'Astrid';   // row in family-apps `people`
+const TEACHER_NAME = 'Wes';      // Phase 2: add this row to `people`, then sends go live
+
+const CATS = [
+  {id:'putting_chipping',   label:'Putting / Chipping'},
+  {id:'pitching_scoring',   label:'Pitching / Scoring'},
+  {id:'long_game_driving',  label:'Long Game / Driving'},
+  {id:'course_management',  label:'Course Management'},
+  {id:'mental_game',        label:'Mental Game'},
+];
+const catLabel = id => (CATS.find(c=>c.id===id)||{}).label || id;
+const HORIZONS = [
+  {id:'now', label:'Now'},
+  {id:'2y',  label:'Next 2 years'},
+  {id:'5y',  label:'Next 5 years'},
+];
+const STATUSES = [
+  {id:'on_track', label:'On track'},
+  {id:'at_risk',  label:'At risk'},
+  {id:'stalled',  label:'Stalled'},
+];
+const DAY_LONG = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// Shared discipline taxonomy — carried over from the old tracker so on-course
+// practice focus keeps meaning the same thing across the round history.
+const PRACTICE_FOCI = [
+  {id:'driving',  label:'Driving',    hint:'off the tee'},
+  {id:'long_game',label:'Long Game',  hint:'long irons / woods'},
+  {id:'scoring',  label:'Scoring',    hint:'7-iron or shorter'},
+  {id:'bunkers',  label:'Bunkers',    hint:'e.g. greenside bunker every hole'},
+  {id:'putting',  label:'Putting',    hint:'e.g. lag putt every hole'},
+  {id:'updowns',  label:'Up & Downs', hint:'pitch/chip/putt scramble — 9 in 27'},
+];
+const fociLabels = ids => (ids||[]).map(id=>{const f=PRACTICE_FOCI.find(x=>x.id===id);return f?f.label:id;});
+
+/* ═══════════════════════════════════════════════════════════════
+   SMALL HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+// Declared as functions, not const arrows, on purpose: inline onclick="…"
+// attributes resolve identifiers against window, and a top-level const never
+// gets there. Anything an inline handler might touch has to be a function.
+function el(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function gv(id){ const e=el(id); return e ? e.value.trim() : ''; }
+function nn(v){ return v!=null && v!==''; }
+
+// Local (not UTC) date key — the old tracker used toISOString() which slides a
+// day backwards for anyone east of Greenwich before 02:00. Vienna is +1/+2.
+function ymd(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function parseYmd(s){ const [y,m,d]=String(s).split('-').map(Number); return new Date(y,m-1,d); }
+function todayYmd(){ return ymd(new Date()); }
+// Monday of the week containing d. Week = Mon–Sun, everywhere, no exceptions.
+function monday(d){
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = x.getDay();                     // 0 Sun … 6 Sat
+  x.setDate(x.getDate() - (dow===0 ? 6 : dow-1));
+  return x;
+}
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function fmtDay(d){ return d.getDate()+' '+MONTHS[d.getMonth()].slice(0,3); }
+function fmtRange(mon){ const sun=addDays(mon,6); return fmtDay(mon)+' – '+fmtDay(sun)+' '+sun.getFullYear(); }
+function daysBetween(a,b){ return Math.round((parseYmd(b)-parseYmd(a))/86400000); }
+
+let toastT=null;
+function toast(msg){
+  const t=el('toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2600);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTH — GoTrue over plain fetch. No SDK, no CDN, nothing to go
+   stale on a plane. Session lives in localStorage; the refresh
+   token keeps it alive so the one-time link really is one-time.
+   ═══════════════════════════════════════════════════════════════ */
+const SESS_KEY = 'gc_session';
+let SESSION = null;   // {access_token, refresh_token, expires_at}
+let ME = null;        // {id, email, role, display_name}
+let STUDENT_ID = null;
+let GOALS_STUDENT_WRITABLE = true;
+
+function loadSession(){
+  try { SESSION = JSON.parse(localStorage.getItem(SESS_KEY)||'null'); } catch { SESSION=null; }
+}
+function saveSession(s){
+  SESSION = s ? {
+    access_token: s.access_token,
+    refresh_token: s.refresh_token,
+    expires_at: s.expires_at || (Math.floor(Date.now()/1000) + (s.expires_in||3600)),
+  } : null;
+  if (SESSION) localStorage.setItem(SESS_KEY, JSON.stringify(SESSION));
+  else localStorage.removeItem(SESS_KEY);
+}
+
+async function authFetch(path, body){
+  const r = await fetch(SB_URL+'/auth/v1/'+path, {
+    method:'POST',
+    headers:{'apikey':SB_KEY,'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(j.error_description || j.msg || j.message || ('HTTP '+r.status));
+  return j;
+}
+
+async function refreshSession(){
+  if (!SESSION || !SESSION.refresh_token) return false;
+  try {
+    const j = await authFetch('token?grant_type=refresh_token', {refresh_token: SESSION.refresh_token});
+    saveSession(j);
+    return true;
+  } catch { saveSession(null); return false; }
+}
+
+async function validToken(){
+  if (!SESSION) return null;
+  if (SESSION.expires_at - 60 <= Math.floor(Date.now()/1000)) {
+    if (!await refreshSession()) return null;
+  }
+  return SESSION.access_token;
+}
+
+// The magic link lands back here as #access_token=…&refresh_token=…
+function consumeHashTokens(){
+  const h = location.hash.startsWith('#') ? location.hash.slice(1) : '';
+  if (!h.includes('access_token')) return false;
+  const p = new URLSearchParams(h);
+  saveSession({
+    access_token: p.get('access_token'),
+    refresh_token: p.get('refresh_token'),
+    expires_in: Number(p.get('expires_in')||3600),
+  });
+  history.replaceState(null,'',location.pathname+location.search);
+  return true;
+}
+
+function authMsg(text, cls){
+  const m = el('auth-msg'); m.className='msg'+(cls?' '+cls:''); m.innerHTML = text;
+}
+
+async function sendLink(){
+  const email = gv('auth-email').toLowerCase();
+  if (!email || !email.includes('@')) { authMsg('That doesn\'t look like an email address.','err'); return; }
+  el('auth-send').disabled = true;
+  authMsg('<span class="spin"></span> Sending…');
+  try {
+    // redirect_to is a QUERY param on the endpoint, not a body field. It must
+    // also be whitelisted in Supabase → Authentication → URL Configuration
+    // (see DEPLOY.md) or GoTrue silently sends people to the site root.
+    const back = location.origin + location.pathname;
+    await authFetch('otp?redirect_to=' + encodeURIComponent(back), {email, create_user: true});
+    localStorage.setItem('gc_email', email);
+    el('auth-step-email').classList.add('hide');
+    el('auth-step-code').classList.remove('hide');
+    authMsg('Check <b>'+esc(email)+'</b>. Tap the link on this device, or type the 6-digit code if the email has one.','ok');
+  } catch(e) {
+    authMsg('Couldn\'t send: '+esc(e.message),'err');
+  }
+  el('auth-send').disabled = false;
+}
+
+async function verifyCode(){
+  const email = (localStorage.getItem('gc_email')||gv('auth-email')).toLowerCase();
+  const token = gv('auth-code');
+  if (token.length < 6) { authMsg('Enter the 6-digit code.','err'); return; }
+  el('auth-verify').disabled = true;
+  authMsg('<span class="spin"></span> Signing in…');
+  try {
+    const j = await authFetch('verify', {type:'email', email, token});
+    saveSession(j);
+    await start();
+  } catch(e) {
+    authMsg('That code didn\'t work: '+esc(e.message)+'<br>Try the link in the email instead.','err');
+    el('auth-verify').disabled = false;
+  }
+}
+
+function signOut(){
+  saveSession(null); ME=null;
+  location.reload();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DATA LAYER — PostgREST over fetch, with the session token so RLS
+   sees who is asking.
+   ═══════════════════════════════════════════════════════════════ */
+async function api(path, {method='GET', body=null, prefer=null, base=SB_URL, key=SB_KEY, auth=true}={}){
+  const headers = {'apikey':key, 'Content-Type':'application/json'};
+  let tok = key;
+  if (auth && base===SB_URL) { const t = await validToken(); if (t) tok = t; }
+  headers['Authorization'] = 'Bearer '+tok;
+  if (prefer) headers['Prefer'] = prefer;
+  const r = await fetch(base+'/rest/v1/'+path, {method, headers, body: body!=null ? JSON.stringify(body) : undefined});
+  if (r.status === 401 && auth && base===SB_URL) {
+    if (await refreshSession()) return api(path,{method,body,prefer,base,key,auth});
+  }
+  if (!r.ok) {
+    const t = await r.text().catch(()=> '');
+    throw new Error('DB '+r.status+': '+t.slice(0,200));
+  }
+  if (r.status === 204) return null;
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+const sel    = (t,q)      => api(t+(q?'?'+q:''));
+const ins    = (t,rows)   => api(t, {method:'POST', body:rows, prefer:'return=representation'});
+const upd    = (t,q,patch)=> api(t+'?'+q, {method:'PATCH', body:patch, prefer:'return=representation'});
+const del    = (t,q)      => api(t+'?'+q, {method:'DELETE', prefer:'return=minimal'});
+
+/* ── Signal notifications ─────────────────────────────────
+   The app stages a row in `notifications` (this project); signal-server
+   drains it and sends from JAMES's number.
+
+   It does NOT write straight into the family-apps `outbound_messages`
+   queue, even though signal-server already drains that one. Tested
+   2026-07-30: the family-apps anon key can SELECT that table but INSERT
+   returns 401 — it is service-key-only, and correctly so, since that key
+   is public in every family PWA. Our session token is issued by
+   astrid-efficiency, so family-apps sees it as anon regardless. Staging
+   here is the only route where RLS can actually verify that a signed-in
+   member wrote the row.
+
+   Recipients are NAMES, never numbers — no phone number is ever committed
+   to this public repo; signal-server resolves them.
+
+   Events, and only these: drill assigned + feedback ready → Astrid.
+   Plan submitted + Sunday digest → Wes. No per-tick pings, ever.
+────────────────────────────────────────────────────────────── */
+async function notify(name, message){
+  try {
+    await api('notifications', {method:'POST', prefer:'return=minimal',
+      body:{recipient: name, message, status:'pending'}});
+    return true;
+  } catch(e){
+    console.warn('notify failed', e);
+    return false;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ROUTER
+   ═══════════════════════════════════════════════════════════════ */
+// Renderers live in app-pages.js, which loads after this script — hence the
+// lazy arrows and the boot-on-load at the bottom.
+const PAGES = {
+  goals:       {title:'Agreed Goals',       render:()=>renderGoals()},
+  week:        {title:'Weekly Commitments', render:()=>renderWeek()},
+  drills:      {title:'Drills + Games',     render:()=>renderDrills()},
+  // resetRounds() clears any half-finished add/edit form so navigating away
+  // and back lands on the round list, not a stale form.
+  rounds:      {title:'Rounds',             render:()=>{resetRounds(); return renderRounds();}},
+  tournaments: {title:'Tournaments',        render:()=>renderTournaments()},
+  summary:     {title:'Weekly Summary',     render:()=>renderSummary()},
+  feedback:    {title:'Feedback',           render:()=>renderFeedback()},
+};
+let CUR = 'goals';
+
+function go(page){
+  if (!PAGES[page]) page = 'goals';
+  CUR = page;
+  for (const k in PAGES) el('pg-'+k).classList.toggle('on', k===page);
+  el('pg-title').textContent = PAGES[page].title;
+  el('pg-sub').textContent = '';
+  document.querySelectorAll('#menu a[data-go]').forEach(a => a.classList.toggle('on', a.dataset.go===page));
+  closeMenu();
+  window.scrollTo(0,0);
+  el('pg-'+page).innerHTML = '<div class="empty"><span class="spin"></span> Loading…</div>';
+  Promise.resolve(PAGES[page].render()).catch(e => {
+    el('pg-'+page).innerHTML = '<div class="card"><div class="ct">Something broke</div><div class="empty">'+esc(e.message)+'</div></div>';
+    console.error(e);
+  });
+}
+function openMenu(){ el('menu').classList.add('on'); }
+function closeMenu(){ el('menu').classList.remove('on'); }
+
+function openSheet(html){ el('sheet-in').innerHTML = html; el('sheet').classList.add('on'); }
+function closeSheet(){ el('sheet').classList.remove('on'); el('sheet-in').innerHTML=''; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════════════════ */
+async function start(){
+  const tok = await validToken();
+  if (!tok) { showAuth(); return; }
+  // Who am I? No profile row = not on the allow-list.
+  let rows;
+  try { rows = await sel('profiles','select=*'); }
+  catch(e){ saveSession(null); showAuth('Session expired — sign in again.'); return; }
+
+  const meRow = (rows||[]).find(p => p.id === parseJwtSub(SESSION.access_token));
+  if (!meRow) {
+    showAuth('That email isn\'t set up for this app. Astrid has to add it first.');
+    saveSession(null);
+    return;
+  }
+  ME = meRow;
+  const student = (rows||[]).find(p => p.role === 'student');
+  STUDENT_ID = student ? student.id : meRow.id;
+
+  try {
+    const st = await sel('app_settings','select=key,value&key=eq.goals_student_writable');
+    if (st && st.length) GOALS_STUDENT_WRITABLE = (st[0].value === true || st[0].value === 'true');
+  } catch {}
+
+  el('auth').classList.add('hide');
+  el('app').classList.remove('hide');
+  el('menu-name').textContent = ME.display_name || ME.email;
+  el('menu-role').textContent = ME.role === 'teacher' ? 'Teacher' : 'Student';
+
+  // Student lands on Goals; teacher lands on the Weekly Summary.
+  go(ME.role === 'teacher' ? 'summary' : 'goals');
+}
+
+function parseJwtSub(t){
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub; }
+  catch { return null; }
+}
+
+function showAuth(msg){
+  el('app').classList.add('hide');
+  el('auth').classList.remove('hide');
+  if (msg) authMsg(esc(msg),'err');
+  const saved = localStorage.getItem('gc_email');
+  if (saved && el('auth-email')) el('auth-email').value = saved;
+}
+
+/* wiring */
+el('burger').onclick    = openMenu;
+el('menu').onclick      = e => { if (e.target.id === 'menu') closeMenu(); };
+el('menu-out').onclick  = signOut;
+el('sheet').onclick     = e => { if (e.target.id === 'sheet') closeSheet(); };
+el('auth-send').onclick   = sendLink;
+el('auth-verify').onclick = verifyCode;
+el('auth-back').onclick   = () => { el('auth-step-code').classList.add('hide'); el('auth-step-email').classList.remove('hide'); authMsg(''); };
+el('auth-code').addEventListener('keydown', e => { if (e.key==='Enter') verifyCode(); });
+el('auth-email').addEventListener('keydown', e => { if (e.key==='Enter') sendLink(); });
+document.querySelectorAll('#menu a[data-go]').forEach(a => a.onclick = () => go(a.dataset.go));
+
+consumeHashTokens();
+loadSession();
+window.addEventListener('load', () => { start(); });
+</script>
+<script src="app-pages.js"></script>
+</body>
+</html>
