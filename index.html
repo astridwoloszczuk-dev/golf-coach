@@ -216,6 +216,7 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
       <div class="fr"><label>Email</label>
         <input type="email" id="auth-email" autocomplete="email" inputmode="email" placeholder="you@example.com"></div>
       <button class="btn btnp" style="width:100%" id="auth-send">Send me a link</button>
+      <button class="btn" style="width:100%;margin-top:8px" id="auth-have">I already have a link or code</button>
     </div>
 
     <div id="auth-step-code" class="hide">
@@ -670,6 +671,15 @@ el('sheet').onclick     = e => { if (e.target.id === 'sheet') closeSheet(); };
 el('auth-send').onclick   = sendLink;
 el('auth-verify').onclick = verifyCode;
 el('auth-back').onclick   = () => { el('auth-step-code').classList.add('hide'); el('auth-step-email').classList.remove('hide'); authMsg(''); };
+// Reach the paste box WITHOUT sending an email. Needed when the built-in email
+// quota is spent, or when a link has to be minted from the admin API instead.
+el('auth-have').onclick   = () => {
+  const e = gv('auth-email').toLowerCase();
+  if (e) localStorage.setItem('gc_email', e);
+  el('auth-step-email').classList.add('hide');
+  el('auth-step-code').classList.remove('hide');
+  authMsg('Paste the link or code below. Nothing is sent — this exchanges it right here.');
+};
 el('auth-code').addEventListener('keydown', e => { if (e.key==='Enter') verifyCode(); });
 el('auth-email').addEventListener('keydown', e => { if (e.key==='Enter') sendLink(); });
 document.querySelectorAll('#menu a[data-go]').forEach(a => a.onclick = () => go(a.dataset.go));
