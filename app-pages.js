@@ -1005,8 +1005,15 @@ function fillFromScan(d){
    ═══════════════════════════════════════════════════════════════ */
 let TOURN = [];
 
+let CHECKINS = [];
+const checkIn = (tid, phase) => CHECKINS.find(c => c.tournament_id === tid && c.phase === phase);
+
 async function renderTournaments(){
-  TOURN = await sel('tournaments','select=*&order=date.desc') || [];
+  [TOURN, CHECKINS] = await Promise.all([
+    sel('tournaments','select=*&order=date.desc'),
+    sel('check_ins','select=*'),
+  ]);
+  TOURN = TOURN || []; CHECKINS = CHECKINS || [];
   const today = todayYmd();
   let h = ME.role==='student'
     ? `<div class="rbtns" style="margin:0 0 12px"><button class="btn btnp" onclick="editTournament(null)">＋ Add tournament</button></div>` : '';
@@ -1048,6 +1055,9 @@ function tournamentRow(t, isFuture){
         ${t.type==='match'?'Match play':'Stroke play'}${t.venue?' · '+esc(t.venue):''}${isFuture?' · '+esc(t.date):''}</div>
       ${t.notes?`<div style="font-size:12px;color:var(--mu);margin-top:3px;font-style:italic">${esc(t.notes)}</div>`:''}
     </div>
+    <div class="mpair" onclick="event.stopPropagation();openCheckIn(${t.id})" title="Before / after">
+      ${moodDot(checkIn(t.id,'pre'))}${moodDot(checkIn(t.id,'post'))}
+    </div>
     ${!isFuture&&nn(t.score)?`<div class="tscore">${esc(t.score)}</div>`:''}
   </div>`;
 }
@@ -1087,6 +1097,106 @@ async function deleteTournament(id){
   if(!confirm('Delete this tournament?')) return;
   await del('tournaments','id=eq.'+id);
   closeSheet(); renderTournaments();
+}
+
+/* ── Wes's check-in: how it felt before, and what was actually true after ──
+   His words: "colours for emotions before events … all of the above are not
+   reality." So this is not mood logging. The `post` answer is the whole point —
+   the gap between what you feared and what happened is the evidence, and it
+   only reads as evidence if the `pre` was captured before you knew the score.
+────────────────────────────────────────────────────────────────────────────── */
+function moodDot(c){
+  if (!c) return '<span class="mdot empty"></span>';
+  const m = mood(c.mood);
+  return `<span class="mdot" style="background:${m ? m.col : 'var(--mu)'}" title="${esc(m?m.label:'')}"></span>`;
+}
+
+function moodPickHtml(id, sel){
+  return `<div class="moods">` + MOODS.map(m =>
+    `<button type="button" class="mpill ${Number(sel)===m.v?'sel':''}" data-v="${m.v}"
+       style="${Number(sel)===m.v?`background:${m.col};border-color:${m.col};`:`color:${m.col}`}"
+       onclick="pickMood('${id}',${m.v})"><span class="dot"></span>${m.label}</button>`).join('') + `</div>
+    <input type="hidden" id="${id}" value="${sel||''}">`;
+}
+function pickMood(id, v){
+  const inp = el(id); if (!inp) return;
+  inp.value = v;
+  const wrap = inp.previousElementSibling;
+  wrap.querySelectorAll('.mpill').forEach(b => {
+    const m = mood(b.dataset.v), on = Number(b.dataset.v) === v;
+    b.classList.toggle('sel', on);
+    b.setAttribute('style', on ? `background:${m.col};border-color:${m.col};` : `color:${m.col}`);
+  });
+}
+
+function openCheckIn(tid){
+  const t = TOURN.find(x => x.id === tid);
+  if (!t) return;
+  const pre = checkIn(tid,'pre'), post = checkIn(tid,'post');
+  const played = t.date < todayYmd();
+  openSheet(`
+    <div class="sheet-h"><b>${esc(t.name)}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="empty" style="padding:0 0 14px">${esc(t.date)}${t.venue?' · '+esc(t.venue):''}</div>
+
+    <div class="dl" style="margin-top:0">Before — how does it feel?</div>
+    ${moodPickHtml('ci-pre-mood', pre ? pre.mood : '')}
+    <div style="margin-top:12px;font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.8px">Where's your head?</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      ${FOCUS.map(f=>`<button type="button" class="fpill ${pre&&pre.focus===f.id?'sel':''}" data-f="${f.id}"
+        title="${esc(f.hint)}" onclick="pickFocus('${f.id}')">${f.label}</button>`).join('')}
+    </div>
+    <input type="hidden" id="ci-pre-focus" value="${pre?(pre.focus||''):''}">
+    <div class="fr" style="margin-top:10px"><textarea id="ci-pre-note" rows="2"
+      placeholder="Anything you notice (optional)">${pre?esc(pre.note||''):''}</textarea></div>
+    <div class="rbtns" style="margin-top:0">
+      <button class="btn btnp btns" onclick="saveCheckIn(${tid},'pre')">Save before</button></div>
+
+    ${played ? `
+      <div class="dl">After — what was actually true?</div>
+      ${moodPickHtml('ci-post-mood', post ? post.mood : '')}
+      <div class="fr" style="margin-top:10px"><textarea id="ci-post-note" rows="2"
+        placeholder="How it really went">${post?esc(post.note||''):''}</textarea></div>
+      <div class="rbtns" style="margin-top:0">
+        <button class="btn btnb btns" onclick="saveCheckIn(${tid},'post')">Save after</button></div>
+      ${pre && post ? gapLine(pre, post) : ''}
+    ` : `<p class="empty" style="font-size:12px">The "after" opens once the day has passed.</p>`}`);
+}
+
+function pickFocus(f){
+  el('ci-pre-focus').value = f;
+  document.querySelectorAll('.fpill[data-f]').forEach(b => b.classList.toggle('sel', b.dataset.f === f));
+}
+
+// The one line that makes this an intervention rather than a mood diary.
+function gapLine(pre, post){
+  const a = mood(pre.mood), b = mood(post.mood);
+  if (!a || !b) return '';
+  const moved = post.mood - pre.mood;
+  const txt = moved > 0
+    ? `You went in <b>${esc(a.label.toLowerCase())}</b> and came out <b>${esc(b.label.toLowerCase())}</b>. The feeling beforehand wasn't the event.`
+    : moved < 0
+      ? `You went in <b>${esc(a.label.toLowerCase())}</b> and came out <b>${esc(b.label.toLowerCase())}</b>. Worth telling Wes about this one.`
+      : `Same before and after — <b>${esc(a.label.toLowerCase())}</b>.`;
+  return `<div style="margin-top:14px;padding:10px 12px;border-radius:9px;
+    border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:13px;line-height:1.5">${txt}</div>`;
+}
+
+async function saveCheckIn(tid, phase){
+  const m = gv(phase === 'pre' ? 'ci-pre-mood' : 'ci-post-mood');
+  if (!m){ toast('Pick one first'); return; }
+  const row = {
+    student_id: STUDENT_ID, tournament_id: tid, phase, mood: Number(m),
+    focus: phase === 'pre' ? (gv('ci-pre-focus') || null) : null,
+    note: gv(phase === 'pre' ? 'ci-pre-note' : 'ci-post-note') || null,
+    updated_at: new Date().toISOString(),
+  };
+  // on_conflict names the unique index so re-answering overwrites instead of
+  // erroring — the Signal prompt can then be re-sent safely.
+  await api('check_ins?on_conflict=tournament_id,phase', {method:'POST', body: row,
+    prefer:'resolution=merge-duplicates,return=minimal'});
+  toast('Saved');
+  closeSheet();
+  renderTournaments();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1200,12 +1310,21 @@ async function renderSummary(){
 
   if ((tourn||[]).length){
     const t = tourn[0], days = daysBetween(todayYmd(), t.date);
+    const ci = (await sel('check_ins', `select=*&tournament_id=eq.${t.id}`) || []);
+    const pre = ci.find(c => c.phase === 'pre');
+    const preLine = pre
+      ? `<div style="margin-top:9px;display:flex;align-items:center;gap:8px;font-size:13px">
+           <span class="mdot" style="background:${(mood(pre.mood)||{}).col}"></span>
+           <span>Going in <b>${esc((mood(pre.mood)||{}).label||'').toLowerCase()}</b>${
+             pre.focus ? ' · head ' + esc((FOCUS.find(f=>f.id===pre.focus)||{}).label||'').toLowerCase() : ''}</span></div>
+         ${pre.note?`<div style="font-size:12px;color:var(--mu);font-style:italic;margin-top:3px">${esc(pre.note)}</div>`:''}`
+      : `<div class="empty" style="padding:6px 0 0;font-size:12px">No check-in yet.</div>`;
     h += `<div class="card"><div class="ct">Next tournament</div>
       <div class="trow" style="border:none;padding:0">
         <div class="tcd"><b style="color:${days<=7?'var(--rd)':days<=14?'var(--ye)':'var(--ac)'}">${days===0?'today':days}</b><span>${days===0?'':'days'}</span></div>
         <div style="flex:1"><div style="font-size:14px;font-weight:650">${esc(t.name)}</div>
           <div style="font-size:11.5px;color:var(--mu)">${esc(t.date)} · ${t.type==='match'?'Match play':'Stroke play'}${t.venue?' · '+esc(t.venue):''}</div></div>
-      </div></div>`;
+      </div>${preLine}</div>`;
   }
 
   /* — her note — */

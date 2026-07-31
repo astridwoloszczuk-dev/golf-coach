@@ -169,6 +169,16 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 /* ── tournaments ─────────────────────────────────────────────── */
 .trow{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--b1)}
 .trow:last-child{border-bottom:none}
+.moods{display:flex;gap:6px;flex-wrap:wrap}
+.mpill{flex:1;min-width:88px;padding:9px 6px;border-radius:9px;border:1.5px solid var(--b2);
+  background:var(--s2);color:var(--mu);font-size:11.5px;font-weight:600;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;-webkit-tap-highlight-color:transparent}
+.mpill .dot{width:15px;height:15px;border-radius:50%;background:currentColor;opacity:.42}
+.mpill.sel{color:#0d1117}
+.mpill.sel .dot{opacity:1;box-shadow:0 0 0 3px rgba(255,255,255,.18)}
+.mdot{width:11px;height:11px;border-radius:50%;flex-shrink:0;display:inline-block}
+.mdot.empty{background:none;border:1.5px dashed var(--b2)}
+.mpair{display:flex;gap:4px;align-items:center;flex-shrink:0}
 .tcd{text-align:center;min-width:46px;flex-shrink:0}
 .tcd b{font-size:22px;font-weight:800;line-height:1;display:block}
 .tcd span{font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:1px}
@@ -308,6 +318,30 @@ const STATUSES = [
   // is half the point of keeping goals at all.
   {id:'achieved', label:'Achieved'},
 ];
+// Wes's pre-event axis, threat → challenge, in his words and his order.
+//
+// The ramp is COOL → WARM, deliberately NOT red-to-green. A red "scared" would
+// tell her the feeling is bad; his whole point is that it isn't real, not that
+// it's wrong — and a judgemental palette is one she'd quietly stop filling in
+// honestly, which would cost the data that makes this worth doing.
+const MOODS = [
+  {v:1, label:'Scared',          col:'#8b5cf6'},
+  {v:2, label:'Anxious',         col:'#6366f1'},
+  {v:3, label:'Nervous',         col:'#0ea5e9'},
+  {v:4, label:'Looking forward', col:'#14b8a6'},
+  {v:5, label:'Excited',         col:'#f59e0b'},
+  {v:6, label:'Go time',         col:'#f97316'},
+];
+const mood = v => MOODS.find(m => m.v === Number(v)) || null;
+
+// The second dimension: where her head is. "Now" is the target; the other two
+// are the late-night future-and-past loops he named.
+const FOCUS = [
+  {id:'past',   label:'In the past',   hint:'replaying the last one'},
+  {id:'future', label:'In the future', hint:'playing it before it happens'},
+  {id:'now',    label:'Right here',    hint:'present'},
+];
+
 const DAY_LONG = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
