@@ -1138,6 +1138,13 @@ function openCheckIn(tid){
     <div class="sheet-h"><b>${esc(t.name)}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="empty" style="padding:0 0 14px">${esc(t.date)}${t.venue?' · '+esc(t.venue):''}</div>
 
+    <div style="padding:10px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.04);font-size:12.5px;line-height:1.55;margin-bottom:14px;color:var(--mu)">
+      These describe <b style="color:var(--tx)">the next hour</b>, not you. That is
+      Wes's whole point — none of them are reality, they are weather. Naming which
+      one is blowing is the exercise.
+    </div>
+
     <div class="dl" style="margin-top:0">Before — how does it feel?</div>
     ${moodPickHtml('ci-pre-mood', pre ? pre.mood : '')}
     <div style="margin-top:12px;font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.8px">Where's your head?</div>
