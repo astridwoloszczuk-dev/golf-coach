@@ -1011,7 +1011,7 @@ const checkIn = (tid, phase) => CHECKINS.find(c => c.tournament_id === tid && c.
 async function renderTournaments(){
   [TOURN, CHECKINS] = await Promise.all([
     sel('tournaments','select=*&order=date.desc'),
-    sel('check_ins','select=*'),
+    selSoft('check_ins','select=*'),      // absent until migration 03 is run
   ]);
   TOURN = TOURN || []; CHECKINS = CHECKINS || [];
   const today = todayYmd();
@@ -1317,7 +1317,7 @@ async function renderSummary(){
 
   if ((tourn||[]).length){
     const t = tourn[0], days = daysBetween(todayYmd(), t.date);
-    const ci = (await sel('check_ins', `select=*&tournament_id=eq.${t.id}`) || []);
+    const ci = await selSoft('check_ins', `select=*&tournament_id=eq.${t.id}`);
     const pre = ci.find(c => c.phase === 'pre');
     const preLine = pre
       ? `<div style="margin-top:9px;display:flex;align-items:center;gap:8px;font-size:13px">

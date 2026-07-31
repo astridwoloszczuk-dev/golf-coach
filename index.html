@@ -581,6 +581,11 @@ async function api(path, {method='GET', body=null, prefer=null, base=SB_URL, key
   return txt ? JSON.parse(txt) : null;
 }
 const sel    = (t,q)      => api(t+(q?'?'+q:''));
+// Soft read: for a table a page can render without. A feature added by a
+// migration must never be able to break a page that already worked — if the
+// migration has not been run yet, the page should quietly do less, not die.
+const selSoft = async (t,q) => { try { return await sel(t,q) || []; }
+  catch(e){ console.warn('soft read failed:', t, e.message); return []; } };
 const ins    = (t,rows)   => api(t, {method:'POST', body:rows, prefer:'return=representation'});
 const upd    = (t,q,patch)=> api(t+'?'+q, {method:'PATCH', body:patch, prefer:'return=representation'});
 const del    = (t,q)      => api(t+'?'+q, {method:'DELETE', prefer:'return=minimal'});
