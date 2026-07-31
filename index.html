@@ -531,7 +531,11 @@ function parseAuthInput(raw){
 }
 
 async function verifyCode(){
-  const email = (localStorage.getItem('gc_email') || gv('auth-email')).toLowerCase();
+  // Prefer what is TYPED over what was remembered: a stale localStorage address
+  // silently breaks the OTP path, because `verify` checks email AND token
+  // together. (The token-hash path carries its own identity, which is why that
+  // one works when the code does not — exactly the split seen on 2026-07-31.)
+  const email = (gv('auth-email') || localStorage.getItem('gc_email') || '').toLowerCase();
   const parsed = parseAuthInput(el('auth-code').value);
   if (!parsed) {
     authMsg('That is neither the code nor the link. Paste the whole link, starting https://', 'err');
@@ -545,13 +549,22 @@ async function verifyCode(){
     } else if (parsed.kind === 'link') {
       saveSession(await authFetch('verify', {type: parsed.type, token_hash: parsed.token}));
     } else {
-      saveSession(await authFetch('verify', {type: 'email', email, token: parsed.token}));
+      // GoTrue wants the `type` to match how the token was issued, and a code
+      // from a magic link is not always type 'email'. Try both before giving up.
+      try {
+        saveSession(await authFetch('verify', {type: 'email', email, token: parsed.token}));
+      } catch (first) {
+        saveSession(await authFetch('verify', {type: 'magiclink', email, token: parsed.token}));
+      }
     }
     await start();
   } catch(e) {
+    // Name the address being used. A code fails silently against the wrong
+    // email, and without this the error is unguessable.
     authMsg('That did not work: ' + esc(e.message)
-      + '<br><br>A link that has been opened once is spent. Request a new one and '
-      + 'copy it rather than tapping it.', 'err');
+      + '<br><br>Verifying as <b>' + esc(email || '(no email entered)') + '</b>'
+      + ' — if that is not the address the email went to, correct it above and try again.'
+      + '<br><br>A link or code that has been used once is spent; request a fresh one.', 'err');
     el('auth-verify').disabled = false;
   }
 }
