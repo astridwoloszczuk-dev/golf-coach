@@ -232,9 +232,9 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
     </div>
 
     <div id="auth-step-code" class="hide">
-      <div class="fr"><label>Paste the link from the email — or its 6-digit code</label>
+      <div class="fr"><label>Paste the link from the email — or its code</label>
         <textarea id="auth-code" rows="2" autocomplete="one-time-code"
-          placeholder="https://...supabase.co/auth/v1/verify?token=...   or   123456"></textarea></div>
+          placeholder="https://...supabase.co/auth/v1/verify?token=...   or the code"></textarea></div>
       <button class="btn btnp" style="width:100%" id="auth-verify">Sign in</button>
       <button class="btn" style="width:100%;margin-top:8px" id="auth-back">Use a different email</button>
       <p style="font-size:12px;color:var(--mu);line-height:1.5;margin-top:12px">
@@ -491,7 +491,7 @@ async function sendLink(){
     localStorage.setItem('gc_email', email);
     el('auth-step-email').classList.add('hide');
     el('auth-step-code').classList.remove('hide');
-    authMsg('Check <b>'+esc(email)+'</b>. Tap the link on this device, or type the 6-digit code if the email has one.','ok');
+    authMsg('Check <b>'+esc(email)+'</b>. Tap the link on this device, or paste the code from it.','ok');
   } catch(e) {
     authMsg('Couldn\'t send: '+esc(e.message),'err');
   }
@@ -507,7 +507,10 @@ async function sendLink(){
 function parseAuthInput(raw){
   const v = (raw || '').trim();
   if (!v) return null;
-  if (/^[0-9]{6}$/.test(v)) return {kind:'otp', token:v};
+  // Length is a Supabase project SETTING, not a constant — this project mints 8,
+  // the docs say 6. Accept a range rather than pinning a number, or a perfectly
+  // valid code gets rejected as "neither the code nor the link".
+  if (/^[0-9]{4,12}$/.test(v)) return {kind:'otp', token:v};
   // A bare token hash, e.g. one minted straight from the admin API when the
   // email quota is spent. Long hex, nothing else on the line.
   if (/^[0-9a-f]{20,}$/i.test(v)) return {kind:'link', token:v, type:'magiclink'};
