@@ -546,9 +546,70 @@ async function archiveDrill(id){
 let ROUNDS = [], roundMode = 'select', editId = null;
 let scanFiles = [null,null], scanPreviews = [null,null];
 
+/* ── Comp round → Wes ────────────────────────────────────────────
+   Added 4 Aug 2026. The SPEC said "submit + Sunday digest only, never
+   per-tick"; that rule was written about habit ticks, and a competition
+   result is the one thing a remote coach wants pushed rather than pulled.
+   It replaces texting him the score, so it removes a job rather than
+   adding one. Social rounds stay silent — the digest already lists them.
+
+   WHY A BUTTON AND NOT AUTOMATIC ON SAVE. A round is saved many times
+   while the holes go in — watched live on 4 Aug, saved at 7 holes of 18 —
+   so firing on save would send a score she had not finished writing down.
+   There is no reliable "card complete" signal to fire on instead. Blank
+   holes are a legitimate finished card, for at least two unrelated
+   reasons — 4 Aug had both: two holes CLOSED for maintenance (conceded at
+   net 2 points, never played), and a front nine she simply chose not to
+   enter. A finished card, 7 scores in 18 rows. Any "has she filled it in"
+   rule calls that unfinished for ever. She knows when she is done; the
+   app does not, and should stop pretending it can infer it.
+
+   SENT-ONCE LEDGER: the `notifications` table itself, matched on the
+   round id carried in the message. No new column, and it survives a
+   reinstall — which a localStorage flag would not.
+   ──────────────────────────────────────────────────────────────── */
+const roundTag = id => `#R${id}`;
+let COMP_SENT = new Set();
+
+async function loadCompSent(){
+  const rows = await selSoft('notifications', 'select=message&recipient=eq.'+encodeURIComponent(TEACHER_NAME));
+  COMP_SENT = new Set();
+  for (const r of rows){
+    const m = String(r.message||'').match(/#R(\d+)/);
+    if (m) COMP_SENT.add(Number(m[1]));
+  }
+}
+
+async function sendRoundToWes(id){
+  const r = ROUNDS.find(x=>x.id===id);
+  if (!r) return;
+  const s = getRoundStats(r);
+  const when = r.date ? fmtDay(parseYmd(r.date)) : 'today';
+  const bits = [];
+  if (s.delta !== null) bits.push(`${s.delta>0?'+':''}${s.delta} to par off ${s.n} holes`);
+  if (s.gir   !== null) bits.push(`GIR ${s.gir}`);
+  if (s.fw    !== null) bits.push(`fairways ${s.fw}`);
+  if (s.putts !== null) bits.push(`${s.putts} putts`);
+  if (s.p3)             bits.push(`${s.p3} three-putt${s.p3>1?'s':''}`);
+  if (s.db)             bits.push(`${s.db} double${s.db>1?'s':''}+`);
+  if (s.pen)            bits.push(`${s.pen} penalt${s.pen>1?'ies':'y'}`);
+
+  const msg = `Astrid played a competition — ${r.course||'course not given'}, ${when}.\n\n`
+    + (bits.length ? bits.join(' · ') + '\n\n' : '')
+    + (r.notes ? `Her note: "${r.notes}"\n\n` : '')
+    + `Full card in the app under Rounds. ${roundTag(id)}`;
+
+  if (!await notify(TEACHER_NAME, msg)) { toast("Couldn't queue that — try again"); return; }
+  COMP_SENT.add(id);
+  toast(`Sent to ${TEACHER_NAME}`);
+  renderRounds();
+}
+
 async function renderRounds(){
-  if (roundMode === 'select' && editId === null)
+  if (roundMode === 'select' && editId === null){
     ROUNDS = await sel('golf_rounds','select=*&order=date.desc,id.desc') || [];
+    if (ME.role === 'student') await loadCompSent();
+  }
 
   let h = roundStatsHtml();
 
@@ -712,6 +773,9 @@ function historyHtml(){
         <span style="font-weight:700;font-size:14px">${esc(r.date||'—')}${r.course?' · '+esc(r.course):''}</span>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
           ${r.comp?'<span class="bi">Comp</span>':''}${r.practice?'<span class="bp">Practice</span>':''}
+          ${ME.role==='student'&&r.comp?(COMP_SENT.has(r.id)
+            ? `<span class="bp" title="Already sent — a comp round only goes once">→ ${esc(TEACHER_NAME)} ✓</span>`
+            : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→ ${esc(TEACHER_NAME)}</button>`):''}
           ${ME.role==='student'?`<button class="btn btns" onclick="editRound(${r.id})">✎</button>
           <button class="btn btns btnd" onclick="deleteRound(${r.id})">✕</button>`:''}
         </div>
