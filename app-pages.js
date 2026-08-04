@@ -571,6 +571,71 @@ let scanFiles = [null,null], scanPreviews = [null,null];
 const roundTag = id => `#R${id}`;
 let COMP_SENT = new Set();
 
+/* ── Read-only hole-by-hole ──────────────────────────────────────
+   Found 4 Aug: Wes could not open a round. Not a permission problem —
+   there was no read-only detail view at all. The student reached the
+   card only through editRound(), which is student-gated and correctly
+   so, which left the teacher with a summary line and no way in. The
+   hole-by-hole IS the coaching read, so the coach was the one person
+   who could not see it.
+
+   Expands in place rather than becoming a page: no router change, and
+   the summary stays on screen next to the detail.
+
+   The legend is not decoration. The fault-only shorthand is Astrid's,
+   built for her card in June; Wes has never seen it and would
+   otherwise be reading someone else's private notation.
+   ──────────────────────────────────────────────────────────────── */
+let openRound = null;
+
+function toggleRoundDetail(id){
+  openRound = (openRound === id) ? null : id;
+  renderRounds();
+}
+
+function roundDetailHtml(r){
+  const hd = (r.holes_data||[]).map((h,i)=>({...h, no:i+1}))
+                               .filter(h => String(h.score??'')!=='' || String(h.par??'')!=='');
+  if (!hd.length)
+    return `<div class="empty" style="padding:10px 0 2px">${r.is_simple
+      ? 'Logged without a scorecard — no hole detail.'
+      : 'No holes filled in on this card.'}</div>`;
+
+  const mark = v => { const s=String(v??'').trim(); return s===''?'<span style="color:var(--b1)">·</span>':esc(s.toUpperCase()); };
+  const cell = 'padding:3px 6px;text-align:center;white-space:nowrap';
+
+  return `<div style="overflow-x:auto;margin-top:8px;-webkit-overflow-scrolling:touch">
+    <table style="border-collapse:collapse;font-size:11px;min-width:100%">
+      <thead><tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
+        <th style="${cell};text-align:left">Hole</th><th style="${cell}">Par</th><th style="${cell}">Score</th>
+        <th style="${cell}">GIR</th><th style="${cell}">Drive</th><th style="${cell}">App</th>
+        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th>
+      </tr></thead><tbody>
+      ${hd.map(h=>{
+        const p=Number(h.par), s=Number(h.score);
+        const d=(String(h.score??'')!==''&&String(h.par??'')!=='')?s-p:null;
+        const col=d===null?'':d<=-1?'var(--gn)':d===0?'var(--tx)':d===1?'var(--wn,var(--tx))':'var(--bd,var(--tx))';
+        return `<tr style="border-top:1px solid var(--b1)">
+          <td style="${cell};text-align:left;font-weight:600">${h.no}</td>
+          <td style="${cell};color:var(--mu)">${esc(String(h.par??'')||'·')}</td>
+          <td style="${cell};font-weight:700;color:${col}">${esc(String(h.score??'')||'·')}${d!==null&&d!==0?`<span style="font-weight:400;font-size:9px;color:var(--mu)"> ${d>0?'+':''}${d}</span>`:''}</td>
+          <td style="${cell}">${h.gir?'●':'<span style="color:var(--b1)">·</span>'}</td>
+          <td style="${cell}">${mark(h.drive)}</td>
+          <td style="${cell}">${mark(h.app)}</td>
+          <td style="${cell}">${mark(h.short)}</td>
+          <td style="${cell};color:var(--mu)">${h.putts??'<span style="color:var(--b1)">·</span>'}</td>
+          <td style="${cell}">${mark(h.trbl)}</td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>
+    <div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.6">
+      <b>Fault-only card</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
+      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M scoring-club miss · W wedge wrong side · X dead<br>
+      <b>Short</b> C choked a makeable save (successful saves are derived, not ticked) &nbsp;·&nbsp;
+      <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker
+    </div>`;
+}
+
 async function loadCompSent(){
   const rows = await selSoft('notifications', 'select=message&recipient=eq.'+encodeURIComponent(TEACHER_NAME));
   COMP_SENT = new Set();
@@ -768,9 +833,11 @@ function historyHtml(){
     const s=getRoundStats(r);
     const sc18=(v,n)=>v!==null&&n>0?v*18/n:null;
     const dScaled=sc18(s.delta,s.n);
+    const isOpen = openRound === r.id;
     h+=`<div class="rrow">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">
-        <span style="font-weight:700;font-size:14px">${esc(r.date||'—')}${r.course?' · '+esc(r.course):''}</span>
+        <span style="font-weight:700;font-size:14px;cursor:pointer;flex:1" onclick="toggleRoundDetail(${r.id})"
+          >${isOpen?'▾':'▸'} ${esc(r.date||'—')}${r.course?' · '+esc(r.course):''}</span>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
           ${r.comp?'<span class="bi">Comp</span>':''}${r.practice?'<span class="bp">Practice</span>':''}
           ${ME.role==='student'&&r.comp?(COMP_SENT.has(r.id)
@@ -794,6 +861,7 @@ function historyHtml(){
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}
+      ${isOpen?roundDetailHtml(r):''}
     </div>`;
   }
   return h+`</div>`;
