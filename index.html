@@ -749,6 +749,10 @@ consumeHashTokens();
 loadSession();
 window.addEventListener('load', () => { start(); });
 </script>
-<script src="app-pages.js"></script>
+<!-- Version query, bumped on every app-pages.js change. GitHub Pages serves
+     assets with a ~10 minute max-age, so without this a phone can sit on the
+     old renderers long after index.html has updated — which is exactly how a
+     fix looks broken while you are standing next to the person testing it. -->
+<script src="app-pages.js?v=20260804-2"></script>
 </body>
 </html>
