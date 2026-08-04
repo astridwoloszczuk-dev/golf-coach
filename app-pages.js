@@ -657,7 +657,7 @@ function roundDetailHtml(r){
       </tbody></table></div>
     <div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.6">
       <b>Fault-only card</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
-      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant — outside 30ft, whatever the club · X dead
+      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant — outside 30ft, <i>or</i> short-sided in rough or sand however close · X dead. Club irrelevant
       <span style="opacity:.7">(W on older cards = wedge wrong side, retired 5 Aug 2026; counted as M)</span><br>
       <b>Short</b> C choked a makeable save (successful saves are derived, not ticked) &nbsp;·&nbsp;
       <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker
@@ -908,6 +908,7 @@ function historyHtml(){
       </div>
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
+      ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}
       ${isOpen?roundDetailHtml(r):''}
     </div>`;
@@ -940,6 +941,7 @@ function simpleFormHtml(){
     </div>
     ${focusBlockHtml('sr')}
     <div class="fr"><label>Notes</label><textarea id="sr_n" rows="2"></textarea></div>
+    ${takeawayHtml('sr','','')}
     <div class="rbtns"><button class="btn btnp" onclick="saveSimpleRound()">Save</button>
       <button class="btn" onclick="cancelRound()">Cancel</button></div></div>`;
 }
@@ -953,7 +955,7 @@ function holeBoxHtml(i){
     <div class="hole-r2">
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Drive s/x</span><input type="text" id="hdrive_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine · s advantage lost · x green gone"></div>
       <label class="hole-toggle"><input type="checkbox" id="hgir_${i}"> GIR</label>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">App m/x</span><input type="text" id="happ_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = finished inside 30ft · m missed the quadrant, whatever club · x dead. (w is retired; old cards keep theirs.)"></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">App m/x</span><input type="text" id="happ_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = inside 30ft AND puttable · m missed the quadrant — outside 30ft, or short-sided in rough/sand however close · x dead. Club is irrelevant. (w retired; old cards keep theirs.)"></div>
     </div>
     <div class="hole-r3">
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
@@ -974,7 +976,8 @@ function cardFormHtml(){
     <div class="dl">Holes</div>
     <div>${Array.from({length:18},(_,i)=>holeBoxHtml(i)).join('')}</div>
     <div class="dl">Notes</div>
-    <div class="fr"><textarea id="rf_n" placeholder="What worked, what didn't?"></textarea></div>
+    <div class="fr"><textarea id="rf_n" placeholder="What didn't work?"></textarea></div>
+    ${takeawayHtml('rf','','')}
     <div class="rbtns"><button class="btn btnp" onclick="saveCardRound()">Save</button>
       <button class="btn" onclick="cancelRound()">Cancel</button></div></div>`;
 }
@@ -994,10 +997,14 @@ function fillFormFromRound(){
     toggleFocus('sr'); setFoci('sr', r.practice_focus);
     if(el('sr_drill'))el('sr_drill').value=r.practice_drill||'';
     if(el('sr_n')) el('sr_n').value=r.notes||'';
+    if(el('sr_tk')){ el('sr_tk').value=r.takeaway||''; el('sr_tkn').value=r.takeaway_note||'';
+      document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===r.takeaway)); }
   } else {
     if(el('rf_d')) el('rf_d').value=r.date||'';
     if(el('rf_c')) el('rf_c').value=r.course||'';
     if(el('rf_n')) el('rf_n').value=r.notes||'';
+    if(el('rf_tk')){ el('rf_tk').value=r.takeaway||''; el('rf_tkn').value=r.takeaway_note||'';
+      document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===r.takeaway)); }
     if(el('rf_co'))el('rf_co').checked=!!r.comp;
     if(el('rf_pr'))el('rf_pr').checked=!!r.practice;
     toggleFocus('rf'); setFoci('rf', r.practice_focus);
@@ -1015,6 +1022,58 @@ function fillFormFromRound(){
   }
 }
 
+/* ── The one thing that worked ───────────────────────────────────
+   Agreed with Astrid 4 Aug. The fault-only card is excellent
+   diagnostics and a punishing RITUAL: eighteen holes of writing down
+   only your own misses, performed in the one domain where her memory
+   notes her worth is conditional. Nothing anywhere in the app has ever
+   asked what went well.
+
+   Her design, and better than the one I proposed: a PATTERN ("great
+   putting"), not a single shot. A pattern attributes to skill; one shot
+   attributes to luck, and competence beliefs are built from the former.
+
+   Same six areas as the fault card, so it is one axis signed both ways
+   — Wes can now see where she says it went well against where the card
+   says it didn't, and the disagreement is itself coaching material.
+
+   MANDATORY, INCLUDING BAD ROUNDS. Especially those. Optional here
+   means skipped on exactly the days it matters, and the record quietly
+   becomes a highlights reel of good rounds, which tells nobody
+   anything. On a genuinely awful day "short game stopped it being
+   worse" is both true and useful.
+   ──────────────────────────────────────────────────────────────── */
+const TAKEAWAYS = [
+  {id:'drive',  label:'Driving'},
+  {id:'app',    label:'Approach play'},
+  {id:'short',  label:'Short game'},
+  {id:'putt',   label:'Putting'},
+  {id:'course', label:'Course management'},
+  {id:'mental', label:'Head / attitude'},
+];
+const takeawayLabel = id => (TAKEAWAYS.find(t=>t.id===id)||{}).label || id;
+
+function takeawayHtml(p, sel, note){
+  return `<div class="dl">The one thing that worked</div>
+    <p class="empty" style="padding:0 0 8px;font-size:12px">Required — most of all after a bad one. What held up, not the best single shot.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px">
+      ${TAKEAWAYS.map(t=>`<button type="button" class="fpill ${sel===t.id?'sel':''}" data-tk="${t.id}"
+        onclick="pickTakeaway('${p}','${t.id}')">${t.label}</button>`).join('')}
+    </div>
+    <input type="hidden" id="${p}_tk" value="${esc(sel||'')}">
+    <div class="fr"><textarea id="${p}_tkn" rows="2" placeholder="In your own words (optional)">${esc(note||'')}</textarea></div>`;
+}
+function pickTakeaway(p, id){
+  el(p+'_tk').value = id;
+  document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===id));
+}
+// Returns null when nothing is picked, so the caller can refuse to save.
+function takeawayRow(p){
+  const v = gv(p+'_tk');
+  if (!v) return null;
+  return {takeaway: v, takeaway_note: gv(p+'_tkn') || null};
+}
+
 async function saveRoundRow(row){
   if (editId !== null) await upd('golf_rounds','id=eq.'+editId, row);
   else                 await ins('golf_rounds', row);
@@ -1025,7 +1084,9 @@ async function saveRoundRow(row){
 async function saveSimpleRound(){
   const d=gv('sr_d');
   if(!d){ toast('Pick a date'); return; }
-  await saveRoundRow({
+  const tk=takeawayRow('sr');
+  if(!tk){ toast('Pick the one thing that worked'); return; }
+  await saveRoundRow({ ...tk,
     date:d, course:gv('sr_c')||null, tee:gv('sr_t')||null, holes:Number(gv('sr_h'))||18,
     comp:el('sr_co').checked, practice:el('sr_pr').checked,
     practice_focus:getFoci('sr'), practice_drill:(el('sr_drill')?el('sr_drill').value.trim():'')||null,
@@ -1045,9 +1106,11 @@ async function saveCardRound(){
     putts: el('hputts_'+i)&&el('hputts_'+i).value!=='' ? Number(el('hputts_'+i).value) : null,
     trbl:  el('htrbl_'+i)?el('htrbl_'+i).value.trim().toUpperCase():'',
   }));
+  const tk=takeawayRow('rf');
+  if(!tk){ toast('Pick the one thing that worked'); return; }
   const bad = holes_data.filter(h => h.score!=='' && (h.par===''||h.par==null));
   if (bad.length && !confirm(bad.length+' hole(s) have a score but no par — those won\'t be counted. Save anyway?')) return;
-  await saveRoundRow({
+  await saveRoundRow({ ...tk,
     date:d, course:gv('rf_c')||null, comp:el('rf_co').checked, practice:el('rf_pr').checked,
     practice_focus:getFoci('rf'), practice_drill:(el('rf_drill')?el('rf_drill').value.trim():'')||null,
     notes:gv('rf_n')||null, holes_data, is_simple:false, holes:18,
@@ -1568,6 +1631,7 @@ async function renderSummary(){
         ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} par</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}</div>
+      ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
   h += `</div>`;
