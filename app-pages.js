@@ -1240,18 +1240,44 @@ async function deleteTournament(id){
 function moodDot(c){
   if (!c) return '<span class="mdot empty"></span>';
   const m = mood(c.mood);
-  return `<span class="mdot" style="background:${m ? m.col : 'var(--mu)'}" title="${esc(m?m.label:'')}"></span>`;
+  // A ring, not a second dot: nervous rides ON the mood, it does not sit
+  // beside it. Scrolling the list still reads as one colour per row.
+  const ring = c.also_nervous ? `box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px ${NERVOUS_COL};` : '';
+  return `<span class="mdot" style="background:${m ? m.col : 'var(--mu)'};${ring}"
+    title="${esc(m?m.label:'')}${c.also_nervous?' + nervous':''}"></span>`;
 }
 
-function moodPickHtml(id, sel){
+function moodPickHtml(id, sel, nerv){
+  const has = !(sel===''||sel==null);
   return `<div class="moods">` + MOODS.map(m =>
     `<button type="button" class="mpill ${Number(sel)===m.v?'sel':''}" data-v="${m.v}"
+       ${m.hint?`title="${esc(m.hint)}"`:''}
        style="${Number(sel)===m.v?`background:${m.col};border-color:${m.col};`:`color:${m.col}`}"
        onclick="pickMood('${id}',${m.v})"><span class="dot"></span>${m.label}</button>`).join('') + `</div>
-    <input type="hidden" id="${id}" value="${(sel===''||sel==null)?'':sel}">`;
+    <input type="hidden" id="${id}" value="${has?sel:''}">
+    <input type="hidden" id="${id}-nerv" value="${nerv?'1':''}">
+    <div id="${id}-nervwrap" style="margin-top:8px;${(has&&Number(sel)!==NERVOUS_V)?'':'display:none'}">
+      <button type="button" class="fpill ${nerv?'sel':''}" id="${id}-nervbtn"
+        title="Nervous rides along with anything — Wes reckons it's a good sign, not a warning"
+        onclick="toggleNervous('${id}')">＋ and nervous with it</button>
+    </div>`;
     // NOT `sel||''` — Bored is mood 0, and that falsy 0 silently emptied the
     // hidden field while the pill still showed as selected, so reopening a
     // "Bored" check-in and saving it answered "Pick one first".
+}
+
+// Hidden when "Nervous" itself is the pick: "nervous and nervous with it" is
+// not a state, it is a bug that survived review.
+function toggleNervous(id){
+  const inp = el(id+'-nerv'), btn = el(id+'-nervbtn');
+  inp.value = inp.value ? '' : '1';
+  btn.classList.toggle('sel', !!inp.value);
+}
+function syncNervous(id, v){
+  const wrap = el(id+'-nervwrap');
+  if (!wrap) return;
+  wrap.style.display = (Number(v) === NERVOUS_V) ? 'none' : '';
+  if (Number(v) === NERVOUS_V){ el(id+'-nerv').value=''; el(id+'-nervbtn').classList.remove('sel'); }
 }
 function pickMood(id, v){
   const inp = el(id); if (!inp) return;
@@ -1262,6 +1288,7 @@ function pickMood(id, v){
     b.classList.toggle('sel', on);
     b.setAttribute('style', on ? `background:${m.col};border-color:${m.col};` : `color:${m.col}`);
   });
+  syncNervous(id, v);
 }
 
 /* The teacher READS these and never sets one.
@@ -1283,7 +1310,7 @@ function checkInReadOnly(t, pre, post){
     return `<div style="padding:9px 0;border-bottom:1px solid var(--b1)">
       <div style="display:flex;gap:10px;align-items:center">
         <span class="mdot" style="background:${m.col}"></span>
-        <b style="font-size:14px">${esc(m.label)}</b>
+        <b style="font-size:14px">${esc(m.label)}${c.also_nervous?` <span style="color:${NERVOUS_COL};font-weight:600">+ nervous</span>`:''}</b>
         <span style="color:var(--mu);font-size:12px">${when}${c.focus?` · head in the <b>${esc(c.focus)}</b>`:''}</span>
       </div>
       ${c.note?`<div style="font-size:12.5px;color:var(--mu);font-style:italic;margin:5px 0 0 24px;white-space:pre-wrap">"${esc(c.note)}"</div>`:''}
@@ -1316,7 +1343,7 @@ function openCheckIn(tid){
     </div>
 
     <div class="dl" style="margin-top:0">Before — how does it feel?</div>
-    ${moodPickHtml('ci-pre-mood', pre ? pre.mood : '')}
+    ${moodPickHtml('ci-pre-mood', pre ? pre.mood : '', pre && pre.also_nervous)}
     <div style="margin-top:12px;font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.8px">Where's your head?</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
       ${FOCUS.map(f=>`<button type="button" class="fpill ${pre&&pre.focus===f.id?'sel':''}" data-f="${f.id}"
@@ -1330,7 +1357,7 @@ function openCheckIn(tid){
 
     ${played ? `
       <div class="dl">After — what was actually true?</div>
-      ${moodPickHtml('ci-post-mood', post ? post.mood : '')}
+      ${moodPickHtml('ci-post-mood', post ? post.mood : '', post && post.also_nervous)}
       <div class="fr" style="margin-top:10px"><textarea id="ci-post-note" rows="2"
         placeholder="How it really went">${post?esc(post.note||''):''}</textarea></div>
       <div class="rbtns" style="margin-top:0">
@@ -1375,6 +1402,7 @@ async function saveCheckIn(tid, phase){
   if (!m){ toast('Pick one first'); return; }
   const row = {
     student_id: STUDENT_ID, tournament_id: tid, phase, mood: Number(m),
+    also_nervous: !!gv(phase === 'pre' ? 'ci-pre-mood-nerv' : 'ci-post-mood-nerv'),
     focus: phase === 'pre' ? (gv('ci-pre-focus') || null) : null,
     note: gv(phase === 'pre' ? 'ci-pre-note' : 'ci-post-note') || null,
     updated_at: new Date().toISOString(),

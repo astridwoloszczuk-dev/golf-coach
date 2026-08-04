@@ -342,10 +342,28 @@ const MOODS = [
   {v:4, label:'Looking forward', col:'#14b8a6'},
   {v:5, label:'Excited',         col:'#f59e0b'},
   {v:6, label:'Go time',         col:'#f97316'},
-  {v:0, label:'Bored',           col:'#64748b', offAxis:true},
+  // "Bored" is not quite the right word and both of them know it — Astrid and
+  // Wes agreed it anyway, 4 Aug, because they know what they mean by it. Her
+  // definition, kept verbatim because it is far better than the label: the hot,
+  // sticky Thursday tournament where she just wanted it to be over.
+  {v:0, label:'Bored',           col:'#64748b', offAxis:true,
+   hint:'Hot, sticky, just wanting it to be over. Flat rather than frightened.'},
 ];
 const mood = v => MOODS.find(m => m.v === Number(v)) || null;
 const onAxis = c => c && Number(c.mood) > 0;
+
+// NERVOUS IS A MODIFIER, NOT A RUNG — Wes, 4 Aug. He opened with "all of them
+// should be multi-pick"; they landed on nervous specifically, because nervous is
+// the one feeling that rides along with any other. You can be excited AND
+// nervous, or go time AND nervous — and in Wes's reading that nervous is GOOD,
+// a sign of caring rather than of threat. You cannot be go time AND anxious.
+//
+// So it stays at v:3 for "nervous and nothing else", and additionally becomes a
+// toggle layerable on any other rung. Modelled as a boolean beside the axis
+// rather than as a set of moods, because arbitrary pairs are exactly what they
+// ruled out.
+const NERVOUS_V   = 3;
+const NERVOUS_COL = '#0ea5e9';
 
 // The second dimension: where her head is. "Now" is the target; the other two
 // are the late-night future-and-past loops he named.
@@ -766,6 +784,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260804-3"></script>
+<script src="app-pages.js?v=20260804-4"></script>
 </body>
 </html>
