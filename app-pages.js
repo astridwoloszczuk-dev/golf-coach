@@ -657,7 +657,8 @@ function roundDetailHtml(r){
       </tbody></table></div>
     <div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.6">
       <b>Fault-only card</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
-      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M scoring-club miss · W wedge wrong side · X dead<br>
+      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant — outside 30ft, whatever the club · X dead
+      <span style="opacity:.7">(W on older cards = wedge wrong side, retired 5 Aug 2026; counted as M)</span><br>
       <b>Short</b> C choked a makeable save (successful saves are derived, not ticked) &nbsp;·&nbsp;
       <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker
     </div>`;
@@ -756,8 +757,21 @@ function deriveRoundStats(hd){
     // Fault-only card: a blank Drive cell means "fine", so a fault-free drive
     // on a non-par-3 is the fairway-hit equivalent.
     o.fw=played.filter(h=>Number(h.par)!==3&&dv(h)==='').length;
-    o.appM=played.filter(h=>ap(h)==='m').length;
+    // Wes collapsed the App column on 5 Aug 2026: the club stopped mattering,
+    // the QUADRANT started — he defines it as inside 30ft, the distance at which
+    // a three-putt stops being likely. So "missed with a wedge" and "missed with
+    // a 7-iron" became one fault, because they cost the same.
+    //
+    // Old cards keep their w. It is folded into m for every derived figure —
+    // that is interpretation, not rewriting: a wedge on the wrong side always WAS
+    // a missed quadrant, it just had its own letter. appW stays populated so an
+    // old card still renders the letter it was written with.
+    //
+    // Honest caveat: pre-5-Aug "m" meant "scoring-club miss" by feel, not by 30ft.
+    // A trend that straddles the changeover is comparing a judgement with a
+    // measurement, and should be read as such.
     o.appW=played.filter(h=>ap(h)==='w').length;
+    o.appM=played.filter(h=>ap(h)==='m').length + o.appW;
     o.appX=played.filter(h=>ap(h)==='x').length;
     o.shC=played.filter(h=>sh(h)==='c').length;
     // A successful save is DERIVED: missed the green, still par or better.
@@ -806,7 +820,9 @@ function roundStatsHtml(){
     {l:'3-putts',       g:x=>x.p3, bad:1},
     {l:'Penalties',     g:x=>x.penStk!=null?x.penStk:x.pen, bad:1},
     {l:'Drives lost',   g:x=>x.drvX, bad:1},
-    {l:'App faults',    g:x=>(x.appM!=null||x.appW!=null||x.appX!=null)?((x.appM||0)+(x.appW||0)+(x.appX||0)):null, bad:1},
+    // appM already includes appW (folded above) — adding appW again would count
+    // every legacy wedge miss twice.
+    {l:'App faults',    g:x=>(x.appM!=null||x.appX!=null)?((x.appM||0)+(x.appX||0)):null, bad:1},
     {l:'Short chokes',  g:x=>x.shC, bad:1},
     {l:'GIR',           g:x=>x.gir, bad:0},
     {l:'Up & downs',    g:x=>x.ud, bad:0},
@@ -937,7 +953,7 @@ function holeBoxHtml(i){
     <div class="hole-r2">
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Drive s/x</span><input type="text" id="hdrive_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine · s advantage lost · x green gone"></div>
       <label class="hole-toggle"><input type="checkbox" id="hgir_${i}"> GIR</label>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">App m/w/x</span><input type="text" id="happ_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine · m scoring-club miss · w wedge wrong side · x dead"></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">App m/x</span><input type="text" id="happ_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = finished inside 30ft · m missed the quadrant, whatever club · x dead. (w is retired; old cards keep theirs.)"></div>
     </div>
     <div class="hole-r3">
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
@@ -1129,7 +1145,9 @@ For each hole return:
 - score: strokes played (integer, null if blank)
 - drive: Drive cell — "s", "x", or "" if blank (blank = good drive; par 3s always blank). A stray tick also means "".
 - gir: true if the GIR cell is ticked, else false
-- app: App cell — "m", "w", "x", or "" if blank. A stray tick also means "".
+- app: App cell — "m", "x", or "" if blank. A stray tick also means "". Cards written before
+  5 Aug 2026 may also carry "w"; if you see one, return "w" exactly as written — do not
+  translate it, the app folds it in itself.
 - short: Short cell — "c", or "" if blank (saves are derived from score). A stray tick or dash also means "".
 - putts: number of putts written (integer, null if blank)
 - trbl: Trbl cell letters exactly (W, O, U, FB or GB), or "" if blank
