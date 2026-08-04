@@ -56,10 +56,11 @@ async function renderGoals(){
 
   for (const hz of HORIZONS){
     const list = GOALS.filter(g => g.horizon === hz.id);
-    h += `<div class="card">
-      <div class="ct"><span>${hz.label}</span>${canEdit ? `<button class="btn btns" onclick="editGoal(null,'${hz.id}')">＋ Add</button>` : ''}</div>`;
+    h += `<div class="card tinted" style="background:rgba(${hz.hue},${hz.a})">
+      <div class="sect"><span>${hz.label}<span class="bar" style="background:rgba(${hz.hue},.85)"></span></span>${canEdit ? `<button class="btn btns" onclick="editGoal(null,'${hz.id}')">＋ Add</button>` : ''}</div>`;
     if (!list.length) h += `<div class="empty">Nothing set for this horizon yet.</div>`;
     for (const g of list){
+      if (g.proposed){ h += proposedGoalHtml(g); continue; }
       h += `<div class="goal">
         <div class="light ${g.status}" title="${esc(statusLabel(g.status))}"></div>
         <div class="gt">
@@ -96,17 +97,41 @@ function suggestionHtml(g){
     </div></div>`;
 }
 
+/* CONSENT, NOT EDITING. The goals table is teacher-write-only — she asked for
+   that ("I just don't want to edit them myself. That strikes me as dangerous"),
+   because a goal you can quietly rewrite on a bad day is not a goal. So her two
+   powers are yes and no, and they run through SECURITY DEFINER functions that
+   re-check is_student() rather than through any grant on the table. */
+const consent = (fn, id) => api('rpc/'+fn, {method:'POST', body:{goal_id:id}, prefer:'return=minimal'});
+
 async function acceptSuggestion(id){
   const g = GOALS.find(x=>x.id===id);
   if (!g) return;
-  await upd('goals','id=eq.'+id, {status: g.suggested_status, suggested_status:null,
-    suggested_reason:null, suggested_at:null, updated_at:new Date().toISOString()});
-  toast('Moved to '+statusLabel(g.suggested_status));
+  await consent('accept_goal', id);
+  toast(g.proposed ? 'Added to your goals' : 'Moved to '+statusLabel(g.suggested_status));
   renderGoals();
 }
 async function dismissSuggestion(id){
-  await upd('goals','id=eq.'+id, {suggested_status:null, suggested_reason:null, suggested_at:null});
+  const g = GOALS.find(x=>x.id===id);
+  if (g && g.proposed && !confirm('Bin this proposed goal?')) return;
+  await consent('dismiss_goal', id);
   renderGoals();
+}
+
+// A proposal is not a goal yet, so it must not look like one — no status light,
+// nothing that reads as agreed. It is an argument awaiting a yes.
+function proposedGoalHtml(g){
+  return `<div style="margin:9px 0;padding:11px 13px;border:1px solid rgba(192,132,252,.45);
+      background:rgba(192,132,252,.08);border-radius:10px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--pu);margin-bottom:5px">
+      ${esc(g.proposed_by||'Claude')} suggests a goal</div>
+    <b style="font-size:14.5px;font-weight:650;line-height:1.35;display:block">${esc(g.title)}</b>
+    ${g.detail?`<p style="font-size:12.5px;color:var(--mu);margin-top:4px;line-height:1.45;white-space:pre-wrap">${esc(g.detail)}</p>`:''}
+    ${g.proposed_reason?`<div style="font-size:12.5px;line-height:1.5;margin-top:8px;padding-top:8px;border-top:1px solid rgba(192,132,252,.25)">${esc(g.proposed_reason)}</div>`:''}
+    <div class="rbtns" style="margin-top:10px">
+      <button class="btn btns btnp" onclick="acceptSuggestion(${g.id})">Accept</button>
+      <button class="btn btns" onclick="dismissSuggestion(${g.id})">Not this one</button>
+    </div></div>`;
 }
 
 function statusPickHtml(g){
@@ -421,7 +446,9 @@ async function renderDrills(){
   for (const c of CATS){
     const list = DRILLS.filter(d => d.category === c.id);
     if (!list.length) continue;
-    h += `<div class="card"><div class="ct">${c.label}</div>`;
+    h += `<div class="card tinted" style="background:rgba(${c.hue},.07)">
+      <div class="sect"><span>${c.label}<span class="bar" style="background:rgba(${c.hue},.9)"></span></span>
+        <span style="font-size:12px;color:var(--mu);font-weight:600">${list.length}</span></div>`;
     for (const d of list){
       h += `<div class="drow" onclick="openDrill(${d.id})">
         <div class="dn"><b>${esc(d.name)}</b><span>${esc(d.description||'')}</span></div>
@@ -764,7 +791,10 @@ function getRoundStats(r){
 function roundStatsHtml(){
   if (!ROUNDS.length) return '';
   const sc=(v,n)=>(v!=null&&n>0)?v*18/n:null;
-  const rs=ROUNDS.map(r=>{const s=getRoundStats(r);return {...s,comp:!!r.comp};});
+  // stats_excluded rounds stay in history and stay hers — they just don't get
+  // to speak for the others. A half-entered card is not a small sample, it is a
+  // biased one, and averaging it in is worse than not having it.
+  const rs=ROUNDS.filter(r=>!r.stats_excluded).map(r=>{const s=getRoundStats(r);return {...s,comp:!!r.comp};});
   const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
   const f1=v=>v==null?'—':(Math.round(v*10)/10).toFixed(1);
   const sg=v=>v==null?'':((v>0?'+':'')+(Math.round(v*10)/10).toFixed(1));
@@ -843,7 +873,9 @@ function historyHtml(){
           ${ME.role==='student'&&r.comp?(COMP_SENT.has(r.id)
             ? `<span class="bp" title="Already sent — a comp round only goes once">→ ${esc(TEACHER_NAME)} ✓</span>`
             : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→ ${esc(TEACHER_NAME)}</button>`):''}
-          ${ME.role==='student'?`<button class="btn btns" onclick="editRound(${r.id})">✎</button>
+          ${r.stats_excluded?'<span class="bp" title="Kept in history, left out of every statistic">not counted</span>':''}
+          ${ME.role==='student'?`<button class="btn btns" onclick="toggleExcluded(${r.id})" title="${r.stats_excluded?'Count this round in the statistics':'Keep this round but leave it out of the statistics'}">${r.stats_excluded?'∅':'⌀'}</button>
+          <button class="btn btns" onclick="editRound(${r.id})">✎</button>
           <button class="btn btns btnd" onclick="deleteRound(${r.id})">✕</button>`:''}
         </div>
       </div>
@@ -1005,6 +1037,16 @@ async function saveCardRound(){
     notes:gv('rf_n')||null, holes_data, is_simple:false, holes:18,
   });
 }
+async function toggleExcluded(id){
+  const r = ROUNDS.find(x=>x.id===id); if(!r) return;
+  const now = !r.stats_excluded;
+  if (now && !confirm('Keep this round in the history but leave it out of every statistic?')) return;
+  await upd('golf_rounds','id=eq.'+id,{stats_excluded:now});
+  r.stats_excluded = now;
+  toast(now?'Left out of the stats':'Counting again');
+  renderRounds();
+}
+
 async function deleteRound(id){
   if(!confirm('Delete this round?')) return;
   await del('golf_rounds','id=eq.'+id);

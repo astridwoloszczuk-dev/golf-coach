@@ -66,6 +66,10 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .fr label{display:block;font-size:11px;color:var(--mu);margin-bottom:4px;text-transform:uppercase;letter-spacing:.8px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.card.tinted{border-color:rgba(255,255,255,.14)}
+.sect{font-size:19px;font-weight:750;letter-spacing:-.2px;margin-bottom:12px;
+  display:flex;justify-content:space-between;align-items:center;gap:8px;line-height:1.25}
+.sect .bar{display:block;height:3px;width:34px;border-radius:2px;margin-top:7px}
 .dl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--mu);margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--b1)}
 
 /* ── week nav ────────────────────────────────────────────────── */
@@ -296,18 +300,23 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const STUDENT_NAME = 'Astrid';   // row in family-apps `people`
 const TEACHER_NAME = 'Wes';      // Phase 2: add this row to `people`, then sends go live
 
+// A colour per category so a long scroll tells you where you are without
+// reading a word. Distinct hues, not a ramp — these are peers, not a ranking.
 const CATS = [
-  {id:'putting_chipping',   label:'Putting / Chipping'},
-  {id:'pitching_scoring',   label:'Pitching / Scoring'},
-  {id:'long_game_driving',  label:'Long Game / Driving'},
-  {id:'course_management',  label:'Course Management'},
-  {id:'mental_game',        label:'Mental Game'},
+  {id:'putting_chipping',   label:'Putting / Chipping',  hue:'74,222,128'},
+  {id:'pitching_scoring',   label:'Pitching / Scoring',  hue:'200,169,110'},
+  {id:'long_game_driving',  label:'Long Game / Driving', hue:'96,165,250'},
+  {id:'course_management',  label:'Course Management',   hue:'192,132,252'},
+  {id:'mental_game',        label:'Mental Game',         hue:'251,191,36'},
 ];
 const catLabel = id => (CATS.find(c=>c.id===id)||{}).label || id;
+// One hue, fading with distance: Now is the loud one, five years away is a
+// whisper. The ramp IS the message — what you do this week is not the same
+// weight as where you'd like to be in 2031.
 const HORIZONS = [
-  {id:'now', label:'Now'},
-  {id:'2y',  label:'Next 2 years'},
-  {id:'5y',  label:'Next 5 years'},
+  {id:'now', label:'Now',           hue:'200,169,110', a:'.16'},
+  {id:'2y',  label:'Next 2 years',  hue:'200,169,110', a:'.09'},
+  {id:'5y',  label:'Next 5 years',  hue:'200,169,110', a:'.04'},
 ];
 const STATUSES = [
   {id:'on_track', label:'On track'},
@@ -784,6 +793,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260804-4"></script>
+<script src="app-pages.js?v=20260804-5"></script>
 </body>
 </html>
