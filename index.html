@@ -324,6 +324,17 @@ const STATUSES = [
 // tell her the feeling is bad; his whole point is that it isn't real, not that
 // it's wrong — and a judgemental palette is one she'd quietly stop filling in
 // honestly, which would cost the data that makes this worth doing.
+// 1–6 are Wes's own words in his own order: an ORDERED threat → challenge axis,
+// which is what makes a column of dots readable and plottable against scores.
+//
+// BORED is deliberately v:0 and OFF that axis, not a 7th step on it. Everything
+// from scared to go time is a form of being switched ON; bored is the absence of
+// activation, so it is not "worse than scared" (v:0 at the bottom) nor "better
+// than go time" (v:7 at the top) — both readings would be wrong. Slate grey, off
+// the cool→warm ramp on purpose: it does not sit on the ladder, it sits beside it.
+// Added 4 Aug 2026 at Astrid's request — and it is a real state, not a tidy-up:
+// she played the Roehampton medal half asleep, which is the flat end that the
+// original scale had no word for at all.
 const MOODS = [
   {v:1, label:'Scared',          col:'#8b5cf6'},
   {v:2, label:'Anxious',         col:'#6366f1'},
@@ -331,8 +342,10 @@ const MOODS = [
   {v:4, label:'Looking forward', col:'#14b8a6'},
   {v:5, label:'Excited',         col:'#f59e0b'},
   {v:6, label:'Go time',         col:'#f97316'},
+  {v:0, label:'Bored',           col:'#64748b', offAxis:true},
 ];
 const mood = v => MOODS.find(m => m.v === Number(v)) || null;
+const onAxis = c => c && Number(c.mood) > 0;
 
 // The second dimension: where her head is. "Now" is the target; the other two
 // are the late-night future-and-past loops he named.
@@ -753,6 +766,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260804-2"></script>
+<script src="app-pages.js?v=20260804-3"></script>
 </body>
 </html>

@@ -1248,7 +1248,10 @@ function moodPickHtml(id, sel){
     `<button type="button" class="mpill ${Number(sel)===m.v?'sel':''}" data-v="${m.v}"
        style="${Number(sel)===m.v?`background:${m.col};border-color:${m.col};`:`color:${m.col}`}"
        onclick="pickMood('${id}',${m.v})"><span class="dot"></span>${m.label}</button>`).join('') + `</div>
-    <input type="hidden" id="${id}" value="${sel||''}">`;
+    <input type="hidden" id="${id}" value="${(sel===''||sel==null)?'':sel}">`;
+    // NOT `sel||''` — Bored is mood 0, and that falsy 0 silently emptied the
+    // hidden field while the pill still showed as selected, so reopening a
+    // "Bored" check-in and saving it answered "Pick one first".
 }
 function pickMood(id, v){
   const inp = el(id); if (!inp) return;
@@ -1261,11 +1264,46 @@ function pickMood(id, v){
   });
 }
 
+/* The teacher READS these and never sets one.
+   Found 4 Aug with Wes signed in: the sheet had no role gate, so he got the
+   full picker, her note boxes and both Save buttons. The database was never
+   at risk — RLS is `is_student()` and his write touches 0 rows — but that is
+   precisely what made it bad. The upsert merges on conflict, so on a
+   tournament that already had a check-in his tap returned 200 with an empty
+   result and the app cheerfully said "Saved". A UI that lies is worse than
+   one that refuses.
+
+   He still sees everything: the answers, her notes, the gap line. Only the
+   controls go. Nobody answers for someone else's head. */
+function checkInReadOnly(t, pre, post){
+  const row = (c, when) => {
+    if (!c) return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;color:var(--mu);font-size:13px">
+      <span class="mdot" style="background:transparent;border:1px dashed var(--b1)"></span>${when} — not answered</div>`;
+    const m = mood(c.mood) || {label:'—', col:'var(--b1)'};
+    return `<div style="padding:9px 0;border-bottom:1px solid var(--b1)">
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="mdot" style="background:${m.col}"></span>
+        <b style="font-size:14px">${esc(m.label)}</b>
+        <span style="color:var(--mu);font-size:12px">${when}${c.focus?` · head in the <b>${esc(c.focus)}</b>`:''}</span>
+      </div>
+      ${c.note?`<div style="font-size:12.5px;color:var(--mu);font-style:italic;margin:5px 0 0 24px;white-space:pre-wrap">"${esc(c.note)}"</div>`:''}
+    </div>`;
+  };
+  return `
+    <div class="sheet-h"><b>${esc(t.name)}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="empty" style="padding:0 0 14px">${esc(t.date)}${t.venue?' · '+esc(t.venue):''}</div>
+    ${row(pre,'before')}
+    ${row(post,'after')}
+    ${pre && post ? gapLine(pre, post) : ''}
+    <div class="empty" style="font-size:11.5px;padding:14px 0 0">Astrid's own answers — yours to read, not to set.</div>`;
+}
+
 function openCheckIn(tid){
   const t = TOURN.find(x => x.id === tid);
   if (!t) return;
   const pre = checkIn(tid,'pre'), post = checkIn(tid,'post');
   const played = t.date < todayYmd();
+  if (ME.role !== 'student') { openSheet(checkInReadOnly(t, pre, post)); return; }
   openSheet(`
     <div class="sheet-h"><b>${esc(t.name)}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="empty" style="padding:0 0 14px">${esc(t.date)}${t.venue?' · '+esc(t.venue):''}</div>
@@ -1310,6 +1348,18 @@ function pickFocus(f){
 function gapLine(pre, post){
   const a = mood(pre.mood), b = mood(post.mood);
   if (!a || !b) return '';
+  const lo = s => esc(s.toLowerCase());
+  // Bored sits off the axis, so subtracting it would invent a direction that
+  // does not exist. Say what happened and make no claim about up or down.
+  if (!onAxis(pre) || !onAxis(post)) {
+    const txt = (!onAxis(pre) && !onAxis(post))
+      ? `Flat before, flat after — <b>${lo(a.label)}</b> both ends. Worth asking what was missing.`
+      : !onAxis(pre)
+        ? `You went in <b>${lo(a.label)}</b> and came out <b>${lo(b.label)}</b>. The round switched you on; the flatness beforehand wasn't the event either.`
+        : `You went in <b>${lo(a.label)}</b> and came out <b>${lo(b.label)}</b>. Whatever was there at the start had gone by the end.`;
+    return `<div style="margin-top:14px;padding:10px 12px;border-radius:9px;
+      border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);font-size:13px;line-height:1.5">${txt}</div>`;
+  }
   const moved = post.mood - pre.mood;
   const txt = moved > 0
     ? `You went in <b>${esc(a.label.toLowerCase())}</b> and came out <b>${esc(b.label.toLowerCase())}</b>. The feeling beforehand wasn't the event.`
