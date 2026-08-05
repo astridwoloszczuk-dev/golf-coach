@@ -191,15 +191,97 @@ async function deleteGoal(id){
    ═══════════════════════════════════════════════════════════════ */
 let ASSIGN = [];       // assignments for WEEK, with the embedded drill
 let SUBS = [];         // week_submissions for WEEK
+let REFL = [];         // week_reflections for WEEK and the one before
 let selectedAid = null;
+
+/* ── The weekly reflection ───────────────────────────────────────
+   Wes, 5 Aug. Three questions, answered BEFORE he assigns, so that what
+   he sets answers what she said instead of arriving blind. Due Sunday
+   before 16:00 — the digest he already receives goes at 16:00, so this
+   needs no new delivery and gives that digest her voice.
+
+   It lives here and not on the Weekly Summary on purpose. Her rule, and
+   still right: the summary is evidence, not testimony. This is testimony.
+   Wes reads it beside the evidence rather than inside it, and where the
+   two disagree is the coaching.
+
+   Question 3 carries the weight. Last week's answer to it is printed
+   directly above this week's questions — that placement, and nothing
+   else, is what makes this a contract rather than a diary. Nothing
+   enforces it; being read is the mechanism.
+   ──────────────────────────────────────────────────────────────── */
+const reflFor = wk => REFL.find(r => r.week_start === wk) || null;
+
+function reflectionHtml(){
+  const wk = ymd(WEEK), r = reflFor(wk), prev = reflFor(ymd(addDays(WEEK,-7)));
+  const mine = ME.role === 'student';
+  const v = (x) => esc((r && r[x]) || '');
+
+  if (!mine){
+    if (!r || !r.submitted_at) return `<div class="card"><div class="ct">Her week, in her words</div>
+      <div class="empty">Not written yet.</div></div>`;
+    const row = (lbl, val) => val ? `<div style="margin-bottom:11px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu);margin-bottom:3px">${lbl}</div>
+      <div style="font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(val)}</div></div>` : '';
+    return `<div class="card"><div class="ct">Her week, in her words</div>
+      ${row('What felt good', r.felt_good)}${row('What was off', r.was_off)}
+      ${row('Committing to next week', r.commitment)}</div>`;
+  }
+
+  return `<div class="card"><div class="ct"><span>Reflect &amp; commit</span>${
+      r && r.submitted_at ? '<span class="bp">sent</span>' : ''}</div>
+    ${prev && prev.commitment ? `<div style="padding:10px 12px;border-radius:9px;margin-bottom:13px;
+        border:1px solid rgba(200,169,110,.35);background:rgba(200,169,110,.08)">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--ac);margin-bottom:4px">
+        Last week you committed to</div>
+      <div style="font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(prev.commitment)}</div>
+    </div>` : ''}
+    <div class="fr"><label>What felt good this week?</label>
+      <textarea id="rf_good" rows="2">${v('felt_good')}</textarea></div>
+    <div class="fr"><label>What was off?</label>
+      <textarea id="rf_off" rows="2">${v('was_off')}</textarea></div>
+    <div class="fr"><label>What are you committing to for next week?</label>
+      <textarea id="rf_com" rows="2" placeholder="One thing you'll own — not a target, a behaviour.">${v('commitment')}</textarea></div>
+    <div class="rbtns" style="margin-top:0">
+      <button class="btn btnp btns" onclick="saveReflection(true)">${r && r.submitted_at ? 'Update' : 'Send to '+esc(TEACHER_NAME)}</button>
+      <button class="btn btns" onclick="saveReflection(false)">Save draft</button></div>
+    <p class="empty" style="font-size:11.5px">Goes out with Sunday's 16:00 digest, before he assigns — so what he sets answers what you said.</p>
+  </div>`;
+}
+
+async function saveReflection(send){
+  const row = {
+    student_id: STUDENT_ID, week_start: ymd(WEEK),
+    felt_good: gv('rf_good') || null,
+    was_off:   gv('rf_off')  || null,
+    commitment:gv('rf_com')  || null,
+    updated_at: new Date().toISOString(),
+  };
+  if (send){
+    if (!row.commitment){ toast('Question 3 is the one that matters'); return; }
+    row.submitted_at = new Date().toISOString();
+  }
+  await api('week_reflections?on_conflict=week_start', {method:'POST', body:row,
+    prefer:'resolution=merge-duplicates,return=minimal'});
+  if (send) await notify(TEACHER_NAME,
+    `Astrid's reflection for ${fmtRange(WEEK)} is in the app.
+
+Committing to: ${row.commitment}`);
+  toast(send ? 'Sent' : 'Saved');
+  renderWeek();
+}
 
 async function renderWeek(){
   const wk = ymd(WEEK);
-  [ASSIGN, SUBS] = await Promise.all([
+  // Last week's row too: question 3 is a commitment, and a commitment nobody
+  // reads back is a wish. It is shown above this week's answers.
+  const prevWk = ymd(addDays(WEEK,-7));
+  [ASSIGN, SUBS, REFL] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category,description,scoring_hint,created_by)&week_start=eq.${wk}&order=sort.asc,id.asc`),
     sel('week_submissions', `select=id,submitted_at&week_start=eq.${wk}&order=submitted_at.asc`),
+    selSoft('week_reflections', `select=*&week_start=in.(${wk},${prevWk})`),
   ]);
-  ASSIGN = ASSIGN || []; SUBS = SUBS || [];
+  ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || [];
   selectedAid = null;
 
   const tray = ASSIGN.filter(a => a.day_index == null);
@@ -239,6 +321,7 @@ async function renderWeek(){
     <p class="empty" style="font-size:11.5px">Submitting notifies ${esc(TEACHER_NAME)} once per week and stamps a snapshot. Ticking things off after that is silent.</p>`;
   }
 
+  h += reflectionHtml();
   h += weekNoteHtml();
   el('pg-week').innerHTML = h;
   wireDrag(el('pg-week'));
