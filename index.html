@@ -306,7 +306,13 @@ const CATS = [
   {id:'putting_chipping',   label:'Putting / Chipping',  hue:'74,222,128'},
   {id:'pitching_scoring',   label:'Pitching / Scoring',  hue:'200,169,110'},
   {id:'long_game_driving',  label:'Long Game / Driving', hue:'96,165,250'},
-  {id:'course_management',  label:'Course Management',   hue:'192,132,252'},
+  // Wes, 5 Aug: what used to live under "Course Management" was never course
+  // management — it is practice built to feel like playing. Renamed to Game
+  // Like Training (the id moved with it, migration 08), and a genuinely empty
+  // Course Management created beside it. In his Weekly Summary this category
+  // is the bucket he calls "On Course Practise".
+  {id:'game_like',          label:'Game Like Training',  hue:'192,132,252'},
+  {id:'course_management',  label:'Course Management',   hue:'244,114,182'},
   {id:'mental_game',        label:'Mental Game',         hue:'251,191,36'},
 ];
 const catLabel = id => (CATS.find(c=>c.id===id)||{}).label || id;
@@ -314,9 +320,12 @@ const catLabel = id => (CATS.find(c=>c.id===id)||{}).label || id;
 // whisper. The ramp IS the message — what you do this week is not the same
 // weight as where you'd like to be in 2031.
 const HORIZONS = [
-  {id:'now', label:'Now',           hue:'200,169,110', a:'.16'},
-  {id:'2y',  label:'Next 2 years',  hue:'200,169,110', a:'.09'},
-  {id:'5y',  label:'Next 5 years',  hue:'200,169,110', a:'.04'},
+  // Wes's words, 5 Aug. The ids stay now/2y/5y — every existing goal row keys
+  // off them, and the horizon a goal was set against does not change because
+  // the heading did.
+  {id:'now', label:'Short',  hue:'200,169,110', a:'.16'},
+  {id:'2y',  label:'Medium', hue:'200,169,110', a:'.09'},
+  {id:'5y',  label:'Long',   hue:'200,169,110', a:'.04'},
 ];
 const STATUSES = [
   {id:'on_track', label:'On track'},
@@ -793,6 +802,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260804-8"></script>
+<script src="app-pages.js?v=20260805-1"></script>
 </body>
 </html>

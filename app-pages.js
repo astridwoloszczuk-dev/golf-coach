@@ -698,6 +698,28 @@ async function sendRoundToWes(id){
   renderRounds();
 }
 
+/* Wes asked for the legend to live on the Rounds page rather than only inside
+   an opened card, 5 Aug. Collapsed by default: he needs it until he has the
+   shorthand, she never needs it, and neither should pay for it with a screen
+   of small print above their rounds. */
+let legendOpen = false;
+function toggleLegend(){ legendOpen = !legendOpen; renderRounds(); }
+function roundsLegendHtml(){
+  return `<div class="card" style="padding:11px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleLegend()">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mu);font-weight:600">
+        How to read the card</span>
+      <span style="color:var(--mu);font-size:13px">${legendOpen?'▾':'▸'}</span>
+    </div>
+    ${legendOpen?`<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.65">
+      <b>Fault-only</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
+      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant · X dead<br>
+      <b>Short</b> C choked a makeable save (successful saves are derived, not ticked)<br>
+      <b>Trbl</b> W water · O OB · U unplayable — <i>these carry a penalty stroke</i> · FB/GB bunker, no stroke<br>
+      <b>GIR</b> green in regulation · <b>Putts</b> count
+    </div>`:''}</div>`;
+}
+
 async function renderRounds(){
   if (roundMode === 'select' && editId === null){
     ROUNDS = await sel('golf_rounds','select=*&order=date.desc,id.desc') || [];
@@ -705,10 +727,13 @@ async function renderRounds(){
   }
 
   let h = roundStatsHtml();
+  h += roundsLegendHtml();
 
   if (editId !== null){
     const r = ROUNDS.find(x=>x.id===editId);
     h += r && r.is_simple ? simpleFormHtml() : cardFormHtml();
+  } else if (roundMode === 'select' && ME.role !== 'student'){
+    // Rounds are hers to write (migration 08). Nothing to offer him here.
   } else if (roundMode === 'select'){
     h += `<div class="card"><div class="ct">New round</div>
       <p class="empty" style="padding:0 0 10px">Scan the scorecard, enter it hole by hole, or just log that you played.</p>
