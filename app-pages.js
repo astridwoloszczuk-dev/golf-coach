@@ -719,7 +719,7 @@ function roundDetailHtml(r){
       <thead><tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
         <th style="${cell};text-align:left">Hole</th><th style="${cell}">Par</th><th style="${cell}">Score</th>
         <th style="${cell}">GIR</th><th style="${cell}">Drive</th><th style="${cell}">App</th>
-        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th>
+        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Cmt</th>
       </tr></thead><tbody>
       ${hd.map(h=>{
         const p=Number(h.par), s=Number(h.score);
@@ -735,6 +735,7 @@ function roundDetailHtml(r){
           <td style="${cell}">${mark(h.short)}</td>
           <td style="${cell};color:var(--mu)">${h.putts??'<span style="color:var(--b1)">·</span>'}</td>
           <td style="${cell}">${mark(h.trbl)}</td>
+          <td style="${cell};color:${h.cmt?'var(--rd)':'var(--b1)'}">${h.cmt?'●'.repeat(Math.min(5,Number(h.cmt))):'·'}</td>
         </tr>`;
       }).join('')}
       </tbody></table></div>
@@ -743,7 +744,8 @@ function roundDetailHtml(r){
       <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant · X dead
       <span style="opacity:.7">(W on older cards = wedge wrong side, retired 5 Aug 2026; counted as M)</span><br>
       <b>Short</b> C choked a makeable save (successful saves are derived, not ticked) &nbsp;·&nbsp;
-      <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker
+      <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker &nbsp;·&nbsp;
+      <b>Cmt</b> one dot per shot she was not fully committed to
     </div>`;
 }
 
@@ -847,7 +849,7 @@ function cancelRound(){ roundMode='select'; editId=null; scanFiles=[null,null]; 
 function deriveRoundStats(hd){
   const Z={n:0,delta:null,gir:null,fw:null,ud:null,p3:null,db:null,b5:null,pen:null,bs:null,
            drvS:null,drvX:null,appM:null,appW:null,appX:null,shC:null,putts:null,penStk:null,bunk:null,hero:null,
-           quadHit:null,quadPct:null};
+           quadHit:null,quadPct:null,cmtPct:null,cmtDots:null};
   if(!hd||!hd.length)return Z;
   const played=hd.filter(h=>h.par!=null&&h.par!==''&&h.score!=null&&h.score!=='');
   const n=played.length;
@@ -906,6 +908,22 @@ function deriveRoundStats(hd){
        = the tee shot, par 5 = 2nd and 3rd, worst counts). */
     o.quadHit = n - o.appM - o.appX;
     o.quadPct = n ? Math.round(o.quadHit * 100 / n) : null;
+
+    /* COMMITMENT % — dots marked AFTER each shot, per Wes and her call that it
+       must be a record rather than a live judgement (a running self-assessment
+       mid-swing is the attention spiral that produced the range shanks).
+       Denominator is shots actually PLAYED: score minus the penalty strokes,
+       which are the W/O/U marks. A penalty is not a shot you failed to commit
+       to. Bunkers carry none. Known limit: one Trbl code per hole, so two
+       penalties on one hole quietly inflate that hole's denominator. */
+    const withCmt = played.filter(h => h.cmt != null && h.cmt !== '');
+    if (withCmt.length){
+      const dots = withCmt.reduce((a,h)=>a+Number(h.cmt||0),0);
+      const shots = withCmt.reduce((a,h)=>a + Number(h.score)
+        - (['W','O','U'].includes(tr(h)) ? 1 : 0), 0);
+      o.cmtDots = dots;
+      o.cmtPct = shots > 0 ? Math.round((1 - dots/shots) * 100) : null;
+    }
   }else{
     o.fw=played.filter(h=>h.fw&&Number(h.par)!==3).length;
     o.ud=played.filter(h=>h.ud&&!h.gir).length;
@@ -1064,7 +1082,8 @@ function simpleFormHtml(){
     </div>
     ${focusBlockHtml('sr')}
     <div class="fr"><label>Notes</label><textarea id="sr_n" rows="2"></textarea></div>
-    ${takeawayHtml('sr','','')}
+    ${takeawayHtml('sr','','','')}
+    ${ticksHtml(null)}
     <div class="rbtns"><button class="btn btnp" onclick="saveSimpleRound()">Save</button>
       <button class="btn" onclick="cancelRound()">Cancel</button></div></div>`;
 }
@@ -1084,6 +1103,7 @@ function holeBoxHtml(i){
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
       <div class="hole-nf"><span class="hole-lbl">Putts</span><input type="number" id="hputts_${i}" min="0" max="9" placeholder="—" class="hole-num"></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Trbl</span><input type="text" id="htrbl_${i}" maxlength="2" placeholder="—" class="hole-num" style="text-transform:uppercase;text-align:center" title="W water · O OB · U unplayable · FB/GB bunker"></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">Not cmtd</span><input type="number" min="0" max="9" id="hcmt_${i}" placeholder="—" class="hole-num" style="text-align:center" title="How many shots on this hole you were NOT fully committed to — the dots off the paper card. Blank = all committed."></div>
     </div></div>`;
 }
 
@@ -1100,7 +1120,8 @@ function cardFormHtml(){
     <div>${Array.from({length:18},(_,i)=>holeBoxHtml(i)).join('')}</div>
     <div class="dl">Notes</div>
     <div class="fr"><textarea id="rf_n" placeholder="What didn't work?"></textarea></div>
-    ${takeawayHtml('rf','','')}
+    ${takeawayHtml('rf','','','')}
+    ${ticksHtml(null)}
     <div class="rbtns"><button class="btn btnp" onclick="saveCardRound()">Save</button>
       <button class="btn" onclick="cancelRound()">Cancel</button></div></div>`;
 }
@@ -1120,12 +1141,18 @@ function fillFormFromRound(){
     toggleFocus('sr'); setFoci('sr', r.practice_focus);
     if(el('sr_drill'))el('sr_drill').value=r.practice_drill||'';
     if(el('sr_n')) el('sr_n').value=r.notes||'';
+    if(el('sr_tks')) el('sr_tks').value=r.takeaway_shot||'';
+    ['shape','pattern','club'].forEach((id,ix)=>{ const v=[r.shape_control,r.miss_pattern,r.club_selection][ix];
+      if(v!=null) pickTick(id, v?1:0); });
     if(el('sr_tk')){ el('sr_tk').value=r.takeaway||''; el('sr_tkn').value=r.takeaway_note||'';
       document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===r.takeaway)); }
   } else {
     if(el('rf_d')) el('rf_d').value=r.date||'';
     if(el('rf_c')) el('rf_c').value=r.course||'';
     if(el('rf_n')) el('rf_n').value=r.notes||'';
+    if(el('rf_tks')) el('rf_tks').value=r.takeaway_shot||'';
+    ['shape','pattern','club'].forEach((id,ix)=>{ const v=[r.shape_control,r.miss_pattern,r.club_selection][ix];
+      if(v!=null) pickTick(id, v?1:0); });
     if(el('rf_tk')){ el('rf_tk').value=r.takeaway||''; el('rf_tkn').value=r.takeaway_note||'';
       document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===r.takeaway)); }
     if(el('rf_co'))el('rf_co').checked=!!r.comp;
@@ -1176,7 +1203,7 @@ const TAKEAWAYS = [
 ];
 const takeawayLabel = id => (TAKEAWAYS.find(t=>t.id===id)||{}).label || id;
 
-function takeawayHtml(p, sel, note){
+function takeawayHtml(p, sel, note, shot, ticks){
   return `<div class="dl">The one thing that worked</div>
     <p class="empty" style="padding:0 0 8px;font-size:12px">Required — most of all after a bad one. What held up, not the best single shot.</p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px">
@@ -1184,7 +1211,9 @@ function takeawayHtml(p, sel, note){
         onclick="pickTakeaway('${p}','${t.id}')">${t.label}</button>`).join('')}
     </div>
     <input type="hidden" id="${p}_tk" value="${esc(sel||'')}">
-    <div class="fr"><textarea id="${p}_tkn" rows="2" placeholder="In your own words (optional)">${esc(note||'')}</textarea></div>`;
+    <div class="fr"><textarea id="${p}_tkn" rows="2" placeholder="In your own words (optional)">${esc(note||'')}</textarea></div>
+    <div class="fr"><label>And the one shot</label>
+      <input type="text" id="${p}_tks" maxlength="160" placeholder="The shot you'd play again" value="${esc(shot||'')}"></div>`;
 }
 function pickTakeaway(p, id){
   el(p+'_tk').value = id;
@@ -1192,9 +1221,49 @@ function pickTakeaway(p, id){
 }
 // Returns null when nothing is picked, so the caller can refuse to save.
 function takeawayRow(p){
-  const v = gv(p+'_tk');
-  if (!v) return null;
-  return {takeaway: v, takeaway_note: gv(p+'_tkn') || null};
+  const v = gv(p+'_tk'), shot = (gv(p+'_tks')||'').trim();
+  // BOTH are required, her call 5 Aug. The pattern is where the coaching value
+  // is; the shot is the one she will actually remember. Neither substitutes.
+  if (!v || !shot) return null;
+  const tick = id => { const el0 = document.querySelector('#pg-rounds .ynpill.sel[data-t="'+id+'"]');
+                       return el0 ? el0.dataset.v === '1' : null; };
+  return {takeaway: v, takeaway_note: gv(p+'_tkn') || null, takeaway_shot: shot,
+          shape_control: tick('shape'), miss_pattern: tick('pattern'), club_selection: tick('club')};
+}
+
+/* Wes's three, 5 Aug — and the only three that survived Astrid's filter: they
+   cannot be DEDUCED from the card, because she can score well with all three
+   off. Anything the scorecard or the notes already imply did not get a field.
+
+   YES AND NO, not one checkbox. Unanswered and "it was off" are different
+   facts, and a single tick collapses them — the paper card has ✓/✗ boxes for
+   the same reason.
+
+   The middle one is valenced the other way round: spotting a pattern in your
+   misses is good awareness of a bad thing. Hence "spotted", never anything
+   evaluative, and the three are never summed. */
+const TICKS = [
+  {id:'shape',   label:'Shot shape under control?'},
+  {id:'pattern', label:'Pattern in the misses spotted?'},
+  {id:'club',    label:'Right clubs selected?'},
+];
+function ticksHtml(vals){
+  const yn = (id,v,on) => `<button type="button" class="ynpill ${on?'sel':''}" data-t="${id}" data-v="${v}"
+      onclick="pickTick('${id}',${v})" style="${on?(v?'background:var(--gn);border-color:var(--gn);color:#0d1117':'background:var(--rd);border-color:var(--rd);color:#0d1117'):''}">${v?'✓':'✗'}</button>`;
+  return `<div class="dl">Three for ${esc(TEACHER_NAME)}</div>
+    ${TICKS.map(t=>{ const cur = vals ? vals[t.id] : null;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--b1)">
+        <span style="font-size:13px">${t.label}</span>
+        <span style="display:flex;gap:6px;flex-shrink:0">${yn(t.id,1,cur===true)}${yn(t.id,0,cur===false)}</span>
+      </div>`;}).join('')}`;
+}
+function pickTick(id, v){
+  document.querySelectorAll('#pg-rounds .ynpill[data-t="'+id+'"]').forEach(b=>{
+    const on = Number(b.dataset.v) === v;
+    b.classList.toggle('sel', on);
+    b.setAttribute('style', on ? (v ? 'background:var(--gn);border-color:var(--gn);color:#0d1117'
+                                    : 'background:var(--rd);border-color:var(--rd);color:#0d1117') : '');
+  });
 }
 
 async function saveRoundRow(row){
@@ -1208,7 +1277,7 @@ async function saveSimpleRound(){
   const d=gv('sr_d');
   if(!d){ toast('Pick a date'); return; }
   const tk=takeawayRow('sr');
-  if(!tk){ toast('Pick the one thing that worked'); return; }
+  if(!tk){ toast('Both the theme and the one shot are needed'); return; }
   await saveRoundRow({ ...tk,
     date:d, course:gv('sr_c')||null, tee:gv('sr_t')||null, holes:Number(gv('sr_h'))||18,
     comp:el('sr_co').checked, practice:el('sr_pr').checked,
@@ -1228,9 +1297,10 @@ async function saveCardRound(){
     short: el('hshort_'+i)?el('hshort_'+i).value.trim().toLowerCase():'',
     putts: el('hputts_'+i)&&el('hputts_'+i).value!=='' ? Number(el('hputts_'+i).value) : null,
     trbl:  el('htrbl_'+i)?el('htrbl_'+i).value.trim().toUpperCase():'',
+    cmt:   el('hcmt_'+i)&&el('hcmt_'+i).value!=='' ? Number(el('hcmt_'+i).value) : null,
   }));
   const tk=takeawayRow('rf');
-  if(!tk){ toast('Pick the one thing that worked'); return; }
+  if(!tk){ toast('Both the theme and the one shot are needed'); return; }
   const bad = holes_data.filter(h => h.score!=='' && (h.par===''||h.par==null));
   if (bad.length && !confirm(bad.length+' hole(s) have a score but no par — those won\'t be counted. Save anyway?')) return;
   await saveRoundRow({ ...tk,
@@ -1910,6 +1980,7 @@ async function renderSummary(){
         ${s.quadPct!=null?`<span style="font-weight:700;color:var(--tx)">Quad:${s.quadPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
+        ${s.cmtPct!=null?`<span style="font-weight:700;color:var(--tx)">Cmt:${s.cmtPct}%</span>`:''}
         ${r.stats_excluded?'<span class="bp">not counted</span>':''}</div>
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
