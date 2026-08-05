@@ -895,7 +895,20 @@ function deriveRoundStats(hd){
     o.bunk=played.filter(h=>['FB','GB'].includes(tr(h))).length;
     o.pen=o.penStk;
 
-    /* QUADRANT % — Wes's headline metric, 5 Aug.
+    /* CLEAN APPROACH % — Wes's headline metric, renamed 5 Aug (evening).
+
+       It was called "Quadrant %", which asserted something the data cannot
+       support. Blank in the App column means "fine FOR THE CLUB IN HAND": with
+       a 6-iron or more she leaves it blank for any green hit, wrong quadrant or
+       not, because at that range the wrong quadrant is not a fault. So the
+       number never measured "inside 30ft" — it measures how often the approach
+       did not cost her, judged by her at the time. That is a perfectly good
+       metric; it just needed a name that is true.
+
+       `c` is deliberately NOT counted here. It is a Short-game mark - a
+       makeable save choked AFTER the green was missed - so counting it would
+       score the same hole twice, once for the approach and once for what
+       happened next.
        Reported as a HIT rate, not a miss rate. It is a refinement of GIR and
        GIR is universally quoted as a hit rate, so showing its stricter cousin
        as a miss rate would have the two reading in opposite directions on the
@@ -906,7 +919,7 @@ function deriveRoundStats(hd){
        times — being further from the quadrant would improve the number.
        Denominator is every played hole: App is assessed on all of them (par 3
        = the tee shot, par 5 = 2nd and 3rd, worst counts). */
-    o.quadHit = n - o.appM - o.appX;
+    o.quadHit = n - o.appM - o.appX;   // clean approaches
     o.quadPct = n ? Math.round(o.quadHit * 100 / n) : null;
 
     /* COMMITMENT % — dots marked AFTER each shot, per Wes and her call that it
@@ -2022,61 +2035,78 @@ function setRoundsView(v){ roundsView = (roundsView===v) ? null : v; renderSumma
    percentages show HOW OFTEN — a coach reads the top line and only drops into
    the rows when one of them looks wrong. */
 function cumScorecardHtml(rounds){
-  const cells = [];
-  for (let i=0;i<18;i++){
-    cells.push(rounds.map(r => ((r.holes_data||[])[i]||{}))
-      .filter(h => String(h.par==null?'':h.par)!=='' && String(h.score==null?'':h.score)!==''));
-  }
-  const flat = cells.reduce((a,x)=>a.concat(x),[]);
-  if (!flat.length) return `<div class="empty">No hole-by-hole data in these rounds.</div>`;
+  /* ONE ROW PER HOLE PLAYED, not per hole number.
 
-  const lc = k => h => String(h[k]||'').toLowerCase();
-  const pc = f => Math.round(flat.filter(f).length*100/flat.length);
-  const pcts = [
-    ['GIR',   pc(h=>h.gir),                                 true],
-    ['Quad',  pc(h=>['m','x','w'].indexOf(lc('app')(h))<0),  true],
-    ['Drive', pc(h=>lc('drive')(h)===''),                    true],
-    ['Save',  pc(h=>lc('short')(h)!=='c'),                   true],
-    ['Trbl',  pc(h=>String(h.trbl||'').trim()!==''),         false],
+     The first version averaged by hole number - "you played the 5th twice,
+     here are its stats". Astrid killed it: she is not always on the same
+     course, so the 5th at Fontana and the 5th at Roehampton have nothing to
+     do with each other and averaging them says nothing at all.
+
+     So this is just every played hole, in order, in the same shape as the
+     card you get by opening a single round - with the round it came from in
+     the left column, and the totals on top. 36 holes played, 36 rows. */
+  const holes = [];
+  for (const r of rounds){
+    (r.holes_data || []).forEach((h, i) => {
+      if (String(h.par == null ? '' : h.par) === '' || String(h.score == null ? '' : h.score) === '') return;
+      holes.push({...h, no: i + 1, date: r.date, course: r.course});
+    });
+  }
+  if (!holes.length) return `<div class="empty">No hole-by-hole data in these rounds.</div>`;
+
+  const lc = k => h => String(h[k] || '').toLowerCase();
+  const pc = f => Math.round(holes.filter(f).length * 100 / holes.length);
+  const tot = k => holes.reduce((a, h) => a + Number(h[k] || 0), 0);
+  const delta = holes.reduce((a, h) => a + (Number(h.score) - Number(h.par)), 0);
+
+  const tiles = [
+    ['Holes',  holes.length, null],
+    ['vs par', (delta > 0 ? '+' : '') + delta, delta <= 0],
+    ['GIR',    pc(h => h.gir) + '%', pc(h => h.gir) >= 50],
+    ['Clean app', pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0) + '%',
+                  pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0) >= 60],
+    ['Putts',  tot('putts') || '\u00b7', null],
   ];
   const cell = 'padding:3px 5px;text-align:center;white-space:nowrap';
+  const mark = v => { const t = String(v || '').trim();
+                      return t === '' ? '<span style="color:var(--b1)">\u00b7</span>' : esc(t.toUpperCase()); };
 
   return `<div style="display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 10px">
-      ${pcts.map(function(x){ const l=x[0],v=x[1],good=x[2];
-        const col = good ? (v>=60?'var(--gn)':v>=45?'var(--tx)':'var(--rd)')
-                         : (v<=15?'var(--gn)':'var(--rd)');
-        return `<div style="flex:1;min-width:60px;padding:7px 4px;border-radius:8px;border:1px solid var(--b1);text-align:center">
-          <div style="font-size:17px;font-weight:700;color:${col}">${v}%</div>
-          <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--mu);margin-top:1px">${l}</div>
-        </div>`; }).join('')}
+      ${tiles.map(([l, v, good]) => `<div style="flex:1;min-width:58px;padding:7px 4px;border-radius:8px;
+        border:1px solid var(--b1);text-align:center">
+        <div style="font-size:17px;font-weight:700;color:${good == null ? 'var(--tx)' : good ? 'var(--gn)' : 'var(--rd)'}">${v}</div>
+        <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--mu);margin-top:1px">${l}</div>
+      </div>`).join('')}
     </div>
-    <div style="font-size:10.5px;color:var(--mu);margin-bottom:8px">Across ${rounds.length} round${rounds.length===1?'':'s'} \u00b7 ${flat.length} holes played. Trbl counts up because it is the one where more is worse.</div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
     <table style="border-collapse:collapse;font-size:11px;min-width:100%"><thead>
       <tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
-        <th style="${cell};text-align:left">Hole</th><th style="${cell}">Plyd</th><th style="${cell}">Avg</th>
-        <th style="${cell}">GIR</th><th style="${cell}">Quad</th><th style="${cell}">Drv</th>
-        <th style="${cell}">Sht</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Cmt</th></tr>
+        <th style="${cell};text-align:left">Round</th><th style="${cell}">Hole</th>
+        <th style="${cell}">Par</th><th style="${cell}">Score</th><th style="${cell}">GIR</th>
+        <th style="${cell}">Drive</th><th style="${cell}">App</th><th style="${cell}">Short</th>
+        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Cmt</th></tr>
       </thead><tbody>
-      ${cells.map(function(hs,i){
-        if (!hs.length) return `<tr style="border-top:1px solid var(--b1);color:var(--b2)">
-          <td style="${cell};text-align:left;font-weight:600">${i+1}</td><td style="${cell}" colspan="9">\u2014</td></tr>`;
-        const avg = hs.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0)/hs.length;
-        const cnt = f => hs.filter(f).length;
-        const dots = hs.reduce((a,h)=>a+Number(h.cmt||0),0);
-        const trb = cnt(h=>String(h.trbl||'').trim());
-        return `<tr style="border-top:1px solid var(--b1)">
-          <td style="${cell};text-align:left;font-weight:600">${i+1}</td>
-          <td style="${cell};color:var(--mu)">${hs.length}</td>
-          <td style="${cell};font-weight:700;color:${avg<=0?'var(--gn)':avg<1?'var(--tx)':'var(--rd)'}">${avg>0?'+':''}${avg.toFixed(1)}</td>
-          <td style="${cell}">${cnt(h=>h.gir)}</td>
-          <td style="${cell}">${cnt(h=>['m','x','w'].indexOf(lc('app')(h))<0)}</td>
-          <td style="${cell}">${cnt(h=>lc('drive')(h)==='')}</td>
-          <td style="${cell}">${cnt(h=>lc('short')(h)==='c')||'\u00b7'}</td>
-          <td style="${cell};color:var(--mu)">${hs.reduce((a,h)=>a+Number(h.putts||0),0)||'\u00b7'}</td>
-          <td style="${cell};color:${trb?'var(--rd)':'var(--b1)'}">${trb||'\u00b7'}</td>
-          <td style="${cell};color:${dots?'var(--rd)':'var(--b1)'}">${dots||'\u00b7'}</td>
-        </tr>`; }).join('')}
+      ${holes.map((h, i) => {
+        const d = Number(h.score) - Number(h.par);
+        const col = d <= -1 ? 'var(--gn)' : d === 0 ? 'var(--tx)' : d === 1 ? 'var(--tx)' : 'var(--rd)';
+        const newRound = i === 0 || holes[i-1].date !== h.date || holes[i-1].course !== h.course;
+        return `<tr style="border-top:1px solid ${newRound ? 'var(--b2)' : 'var(--b1)'}">
+          <td style="${cell};text-align:left;color:var(--mu);font-size:10px">${
+            newRound ? esc(fmtDay(parseYmd(h.date))) + (h.course ? '<br>' + esc(String(h.course).slice(0,14)) : '') : ''}</td>
+          <td style="${cell};font-weight:600">${h.no}</td>
+          <td style="${cell};color:var(--mu)">${esc(String(h.par))}</td>
+          <td style="${cell};font-weight:700;color:${col}">${esc(String(h.score))}${
+            d !== 0 ? `<span style="font-weight:400;font-size:9px;color:var(--mu)"> ${d > 0 ? '+' : ''}${d}</span>` : ''}</td>
+          <td style="${cell}">${h.gir ? '\u25cf' : '<span style="color:var(--b1)">\u00b7</span>'}</td>
+          <td style="${cell}">${mark(h.drive)}</td>
+          <td style="${cell}">${mark(h.app)}</td>
+          <td style="${cell}">${mark(h.short)}</td>
+          <td style="${cell};color:var(--mu)">${h.putts == null ? '<span style="color:var(--b1)">\u00b7</span>' : h.putts}</td>
+          <td style="${cell}">${mark(h.trbl)}</td>
+          <td style="${cell};color:${h.cmt ? 'var(--rd)' : 'var(--b1)'}">${
+            h.cmt ? '\u25cf'.repeat(Math.min(5, Number(h.cmt))) : '\u00b7'}</td>
+        </tr>`;
+      }).join('')}
       </tbody></table></div>`;
 }
 
@@ -2100,7 +2130,7 @@ function gapTableHtml(all){
   const rows = [
     ['Rounds',           S.rounds, C.rounds, null,   0],
     ['Score vs par /18', S.delta,  C.delta,  'low',  1],
-    ['Quadrant %',       S.quad,   C.quad,   'high', 0],
+    ['Clean approach %', S.quad,   C.quad,   'high', 0],
     ['GIR /18',          S.gir,    C.gir,    'high', 1],
     ['Putts /18',        S.putts,  C.putts,  'low',  1],
     ['Penalties /18',    S.pen,    C.pen,    'low',  1],
@@ -2210,7 +2240,9 @@ async function renderSummary(){
     </div>`;
   }
 
-  /* Quadrant % — Wes's headline number, on the page he reads.
+  /* Clean approach % — Wes's headline number, on the page he reads. Renamed
+     from "Quadrant %" on 5 Aug: blank in the App column means fine FOR THE CLUB
+     IN HAND, so the figure never measured 30ft. See deriveRoundStats.
      A single round moves 5.6% per hole, so the week's figure sits beside a
      rolling last-5 and split comp vs social. That split is not decoration: the
      gap between the two IS her choke signature, and closing it is the 2-year
@@ -2230,10 +2262,34 @@ async function renderSummary(){
   const wkComp = quadOf(counted.filter(r=>r.comp));
   const wkSoc  = quadOf(counted.filter(r=>!r.comp));
 
+  /* The two analyses sit ABOVE the individual rounds and are built to be
+     obviously tappable — they were plain small buttons and nothing said they
+     opened anything. These are the two questions a list of rounds cannot
+     answer: where it actually goes wrong, and how much of it only goes wrong
+     under a card. They deserve to be the thing you reach for first. */
+  const panel = (id, title, sub) => `<div onclick="setRoundsView('${id}')" style="cursor:pointer;
+      flex:1;min-width:150px;padding:12px 13px;border-radius:11px;
+      border:1px solid ${roundsView===id?'var(--ac)':'var(--b2)'};
+      background:${roundsView===id?'rgba(200,169,110,.12)':'var(--sf)'}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <b style="font-size:13.5px">${title}</b>
+      <span style="color:${roundsView===id?'var(--ac)':'var(--mu)'};font-size:15px">${roundsView===id?'\u25be':'\u203a'}</span></div>
+    <div style="font-size:11px;color:var(--mu);margin-top:3px;line-height:1.4">${sub}</div></div>`;
+
+  h += `<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px">
+      ${panel('card','Every hole played','One row per hole, this week \u00b7 tap to open')}
+      ${panel('gap','Social vs competition','Where the gap actually is \u00b7 all rounds')}
+    </div>`;
+  if (roundsView==='card' || roundsView==='gap'){
+    h += `<div class="card">
+      <div class="ct">${roundsView==='card' ? 'Every hole played, this week' : 'Social vs competition \u00b7 all rounds'}</div>
+      ${roundsView==='card' ? cumScorecardHtml(counted) : gapTableHtml(allCounted)}</div>`;
+  }
+
   h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
-      wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">Quadrant ${wkQuad}%</span>`:''}</div>`;
+      wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">Clean app ${wkQuad}%</span>`:''}</div>`;
   if (wkQuad!=null && (wkComp!=null||wkSoc!=null))
-    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Greens hit inside 30ft and puttable · ${
+    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Approaches that cost her nothing · ${
       [wkSoc!=null?`social ${wkSoc}%`:null, wkComp!=null?`comp ${wkComp}%`:null].filter(Boolean).join(' · ')
     }${(wkComp!=null&&wkSoc!=null)?` · <b style="color:${wkSoc-wkComp>10?'var(--rd)':'var(--tx)'}">gap ${wkSoc-wkComp>0?'-':'+'}${Math.abs(wkSoc-wkComp)}</b> under a card`:''}</div>`;
   if (!(rounds||[]).filter(r=>r.date >= wk && r.date <= wkEnd).length)
@@ -2246,7 +2302,7 @@ async function renderSummary(){
         ${r.comp?'<span class="bi">Comp</span>':''}</div>
       <div style="font-size:12px;color:var(--mu);display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">
         ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} par</span>`:''}
-        ${s.quadPct!=null?`<span style="font-weight:700;color:var(--tx)">Quad:${s.quadPct}%</span>`:''}
+        ${s.quadPct!=null?`<span style="font-weight:700;color:var(--tx)">App:${s.quadPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
         ${s.cmtPct!=null?`<span style="font-weight:700;color:var(--tx)">Cmt:${s.cmtPct}%</span>`:''}
@@ -2254,19 +2310,6 @@ async function renderSummary(){
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
-  // Two ways in that a list of rounds cannot give him: where on the course it
-  // goes wrong, and how much of it only goes wrong under a card. The gap table
-  // runs on ALL rounds, not this week's — a fortnight of data would be noise.
-  h += `<div class="rbtns" style="margin:-4px 0 12px">
-      <button class="btn btns ${roundsView==='card'?'btnp':''}" onclick="setRoundsView('card')">Cumulative scorecard</button>
-      <button class="btn btns ${roundsView==='gap'?'btnp':''}" onclick="setRoundsView('gap')">Social vs competition</button>
-    </div>`;
-  if (roundsView==='card' || roundsView==='gap'){
-    h += `<div class="card">
-      <div class="ct">${roundsView==='card' ? 'Every hole, this week' : 'Social vs competition \u00b7 all rounds'}</div>
-      ${roundsView==='card' ? cumScorecardHtml(counted) : gapTableHtml(allCounted)}</div>`;
-  }
-
   h += countdownHtml(tourn||[]);
 
   /* — goals + next tournament — */
