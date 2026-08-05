@@ -2026,6 +2026,26 @@ async function renderSummary(){
     </div>`;
   }
 
+  /* Quadrant % — Wes's headline number, on the page he reads.
+     A single round moves 5.6% per hole, so the week's figure sits beside a
+     rolling last-5 and split comp vs social. That split is not decoration: the
+     gap between the two IS her choke signature, and closing it is the 2-year
+     goal. One computation, two jobs.
+
+     `allCounted` is a YEAR of rounds (the gap table needs a real window);
+     `counted` narrows to this week for everything on this card. */
+  const allCounted = (rounds||[]).filter(r=>!r.stats_excluded);
+  const counted    = allCounted.filter(r=>r.date >= wk && r.date <= wkEnd);
+  const quadOf = list => {
+    const st = list.map(getRoundStats).filter(x=>x.quadPct!=null);
+    if (!st.length) return null;
+    const hit = st.reduce((a,x)=>a+x.quadHit,0), n = st.reduce((a,x)=>a+x.n,0);
+    return n ? Math.round(hit*100/n) : null;
+  };
+  const wkQuad = quadOf(counted);
+  const wkComp = quadOf(counted.filter(r=>r.comp));
+  const wkSoc  = quadOf(counted.filter(r=>!r.comp));
+
   h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
       wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">Quadrant ${wkQuad}%</span>`:''}</div>`;
   if (wkQuad!=null && (wkComp!=null||wkSoc!=null))
