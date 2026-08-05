@@ -846,7 +846,8 @@ function cancelRound(){ roundMode='select'; editId=null; scanFiles=[null,null]; 
 /* ── stats (verbatim logic from the tracker) ─────────────────── */
 function deriveRoundStats(hd){
   const Z={n:0,delta:null,gir:null,fw:null,ud:null,p3:null,db:null,b5:null,pen:null,bs:null,
-           drvS:null,drvX:null,appM:null,appW:null,appX:null,shC:null,putts:null,penStk:null,bunk:null,hero:null};
+           drvS:null,drvX:null,appM:null,appW:null,appX:null,shC:null,putts:null,penStk:null,bunk:null,hero:null,
+           quadHit:null,quadPct:null};
   if(!hd||!hd.length)return Z;
   const played=hd.filter(h=>h.par!=null&&h.par!==''&&h.score!=null&&h.score!=='');
   const n=played.length;
@@ -891,6 +892,20 @@ function deriveRoundStats(hd){
     o.penStk=played.filter(h=>['W','O','U'].includes(tr(h))).length;
     o.bunk=played.filter(h=>['FB','GB'].includes(tr(h))).length;
     o.pen=o.penStk;
+
+    /* QUADRANT % — Wes's headline metric, 5 Aug.
+       Reported as a HIT rate, not a miss rate. It is a refinement of GIR and
+       GIR is universally quoted as a hit rate, so showing its stricter cousin
+       as a miss rate would have the two reading in opposite directions on the
+       same line. It also counts UP, which matters in the one domain where her
+       worth is conditional.
+       BOTH m AND x count as misses. On m alone, a round where she was dead on
+       five holes would score BETTER than one where she was 40 feet away five
+       times — being further from the quadrant would improve the number.
+       Denominator is every played hole: App is assessed on all of them (par 3
+       = the tee shot, par 5 = 2nd and 3rd, worst counts). */
+    o.quadHit = n - o.appM - o.appX;
+    o.quadPct = n ? Math.round(o.quadHit * 100 / n) : null;
   }else{
     o.fw=played.filter(h=>h.fw&&Number(h.par)!==3).length;
     o.ud=played.filter(h=>h.ud&&!h.gir).length;
@@ -1654,17 +1669,107 @@ async function saveCheckIn(tid, phase){
    sensible default for him to react to. Collect his reactions after
    2–3 real cycles, then a short spec session — don't guess further.
    ═══════════════════════════════════════════════════════════════ */
+/* ── Wes's summary header ────────────────────────────────────────
+   His spec, 5 Aug: a progress wheel with the percentage in the middle,
+   and beside it the week's assignments grouped into Drills & Games /
+   On Course Practise / Tournaments, each opening to its own detail.
+
+   THE WHEEL IS PRO-RATED BY DAY, and that was Astrid's fix rather than
+   his. A wheel that is red at 0% turns red every Monday morning and
+   calls Monday a failure. So the ring fills against where you should be
+   by TODAY, not against Sunday night: neutral while you are on pace,
+   red only when genuinely behind it, green when ahead or finished.
+   ──────────────────────────────────────────────────────────────── */
+let sumOpen = null;
+function toggleSumSection(k){ sumOpen = (sumOpen===k) ? null : k; renderSummary(); }
+
+function wheelHtml(pct, pace){
+  const R = 46, C = 2 * Math.PI * R;
+  const shown = Math.max(0, Math.min(100, pct));
+  // ahead or done = green · behind pace by more than 15 points = red · else neutral
+  const col = (shown >= 100 || shown >= pace) ? 'var(--gn)'
+            : (pace - shown > 15) ? 'var(--rd)' : 'var(--ac)';
+  return `<svg viewBox="0 0 110 110" style="width:112px;height:112px;flex-shrink:0" aria-label="${shown}% complete">
+    <circle cx="55" cy="55" r="${R}" fill="none" stroke="var(--b1)" stroke-width="9"/>
+    <circle cx="55" cy="55" r="${R}" fill="none" stroke="${col}" stroke-width="9" stroke-linecap="round"
+      stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - shown/100)}"
+      transform="rotate(-90 55 55)" style="transition:stroke-dashoffset .5s ease"/>
+    ${pace<100&&pace>0?`<circle cx="${55 + R*Math.cos((pace/100)*2*Math.PI - Math.PI/2)}"
+      cy="${55 + R*Math.sin((pace/100)*2*Math.PI - Math.PI/2)}" r="3" fill="var(--mu)"><title>where you should be today</title></circle>`:''}
+    <text x="55" y="55" text-anchor="middle" dominant-baseline="central"
+      style="font:700 24px -apple-system,sans-serif;fill:var(--tx)">${shown}%</text>
+  </svg>`;
+}
+
+function sumTile(k, label, done, total){
+  const pct = total ? Math.round(done*100/total) : null;
+  const on = sumOpen===k;
+  return `<div onclick="toggleSumSection('${k}')" style="cursor:pointer;padding:9px 11px;border-radius:9px;
+      border:1px solid ${on?'var(--b2)':'var(--b1)'};background:${on?'rgba(255,255,255,.05)':'transparent'};
+      display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <span style="font-size:13px;font-weight:600">${esc(label)}</span>
+    <span style="font-size:13px;font-weight:700;color:${total&&done===total?'var(--gn)':'var(--tx)'};white-space:nowrap">
+      ${total?`${done}/${total}`:'—'} <span style="color:var(--mu);font-weight:400">${on?'\u25be':'\u25b8'}</span></span>
+  </div>`;
+}
+
+// What is still open matters as much as what is done — he asked for both.
+function sumDetail(items){
+  if (!items.length) return `<div class="empty" style="padding:8px 0">Nothing in here this week.</div>`;
+  return `<div style="margin-top:9px">${items.map(i=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--b1);font-size:13px;line-height:1.5">
+      ${i.done?'<span class="good">\u2713</span>':'<span class="bad">\u2717</span>'} ${esc(i.name)}
+      ${nn(i.score)?` <b style="color:var(--ac)">${esc(String(i.score))}</b>`:''}
+      ${i.when?`<span style="color:var(--mu);font-size:11.5px"> \u00b7 ${esc(i.when)}</span>`:''}
+      ${i.note?`<div style="font-size:11.5px;color:var(--mu);font-style:italic;margin:2px 0 0 15px">${esc(i.note)}</div>`:''}
+    </div>`).join('')}</div>`;
+}
+
+/* Claude's read of the week, written by James into `week_summaries`.
+   NOT the `feedback` table: that one is hidden from the teacher by RLS
+   because it is Claude talking to Astrid. This is Claude talking to
+   BOTH of them, so it needs somewhere Wes can actually read. */
+function claudeSummaryHtml(row, title){
+  if (!row || !row.body) return `<div class="card"><div class="ct">${esc(title)}</div>
+    <div class="empty">Not generated yet \u2014 it is written on Sunday.</div></div>`;
+  return `<div class="card" style="border-color:rgba(192,132,252,.3);background:rgba(192,132,252,.05)">
+    <div class="ct"><span style="color:var(--pu)">${esc(title)}</span>
+      ${row.generated_at?`<span style="font-size:10px;color:var(--mu)">${new Date(row.generated_at).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>`:''}</div>
+    <div style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(row.body)}</div></div>`;
+}
+
+// Next tournament, plus everything else inside a fortnight — his words.
+function countdownHtml(list){
+  if (!list.length) return `<div class="card"><div class="ct">Coming up</div>
+    <div class="empty">Nothing in the next two weeks.</div></div>`;
+  const today = parseYmd(todayYmd());
+  return `<div class="card"><div class="ct">Coming up</div>
+    ${list.map((t,i)=>{
+      const d = Math.round((parseYmd(t.date)-today)/86400000);
+      const lbl = d===0?'today':d===1?'tomorrow':`in ${d} days`;
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+          padding:9px 0;${i?'border-top:1px solid var(--b1)':''}">
+        <div><b style="font-size:${i?'13.5':'15'}px">${esc(t.name)}</b>
+          <div style="font-size:11.5px;color:var(--mu);margin-top:2px">${esc(t.date)}${t.venue?' \u00b7 '+esc(t.venue):''}</div></div>
+        <b style="font-size:${i?'13':'15'}px;color:${d<=2?'var(--ac)':'var(--tx)'};white-space:nowrap">${lbl}</b>
+      </div>`;}).join('')}</div>`;
+}
+
 async function renderSummary(){
   const wk = ymd(WEEK), wkEnd = ymd(addDays(WEEK,6));
   const back4 = ymd(addDays(WEEK,-21));   // this week + 3 back, for the streak check
 
-  const [asg, subs, rounds, goals, tourn, note] = await Promise.all([
+  const fortnight = ymd(addDays(parseYmd(todayYmd()),14));
+  const [asg, subs, rounds, goals, tourn, note, wsum, refl] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category)&week_start=gte.${back4}&week_start=lte.${wk}&order=week_start.asc`),
     sel('week_submissions', `select=submitted_at,snapshot&week_start=eq.${wk}&order=submitted_at.asc`),
     sel('golf_rounds', `select=*&date=gte.${wk}&date=lte.${wkEnd}&order=date.asc`),
     sel('goals', 'select=*&order=horizon.asc,sort.asc'),
-    sel('tournaments', `select=*&date=gte.${todayYmd()}&order=date.asc&limit=1`),
+    // his spec: the next one, plus everything else inside a fortnight
+    sel('tournaments', `select=*&date=gte.${todayYmd()}&date=lte.${fortnight}&order=date.asc`),
     sel('weekly_notes', `select=note&week_start=eq.${wk}`),
+    selSoft('week_summaries', `select=*&week_start=eq.${wk}`),
+    selSoft('week_reflections', `select=*&week_start=eq.${wk}`),
   ]);
 
   const thisWeek = (asg||[]).filter(a => a.week_start === wk);
@@ -1673,7 +1778,51 @@ async function renderSummary(){
   const missed   = planned.filter(a => !a.done);
   const parked   = thisWeek.filter(a => a.day_index == null);
 
+  /* ── header: the wheel and the three buckets ── */
+  const cat = a => ((a.drills||{}).category) || '';
+  const dg  = planned.filter(a => cat(a) !== 'game_like');
+  const ocp = planned.filter(a => cat(a) === 'game_like');
+  const wkT = (tourn||[]).filter(t => t.date >= wk && t.date <= wkEnd);
+  const tDone = wkT.filter(t => (t.score||'').trim() || t.date < todayYmd());
+
+  const totalN = dg.length + ocp.length + wkT.length;
+  const doneN  = dg.filter(a=>a.done).length + ocp.filter(a=>a.done).length + tDone.length;
+  const pct    = totalN ? Math.round(doneN*100/totalN) : 0;
+  // Where she SHOULD be by today. Monday morning expects nothing.
+  const elapsed = Math.min(7, Math.max(0, Math.round((parseYmd(todayYmd()) - WEEK)/86400000) + 1));
+  const pace = Math.round(elapsed*100/7);
+
+  const mapA = l => l.map(a => ({done:!!a.done, name:(a.drills||{}).name||'—', score:a.score,
+                                when:(weekDays()[a.day_index]||{}).label, note:a.note}));
+
   let h = weekNavHtml(fmtRange(WEEK));
+
+  h += `<div class="card">
+    <div style="display:flex;gap:16px;align-items:center">
+      ${wheelHtml(pct, pace)}
+      <div style="flex:1;display:flex;flex-direction:column;gap:7px;min-width:0">
+        ${sumTile('dg','Drills & Games', dg.filter(a=>a.done).length, dg.length)}
+        ${sumTile('ocp','On Course Practise', ocp.filter(a=>a.done).length, ocp.length)}
+        ${sumTile('t','Tournaments', tDone.length, wkT.length)}
+      </div></div>
+    ${sumOpen==='dg' ? sumDetail(mapA(dg)) : ''}
+    ${sumOpen==='ocp'? sumDetail(mapA(ocp)) : ''}
+    ${sumOpen==='t'  ? sumDetail(wkT.map(t=>({done:!!(t.score||'').trim(), name:t.name,
+        score:t.score, when:t.date, note:t.notes}))) : ''}
+  </div>`;
+
+  h += claudeSummaryHtml((wsum||[]).find(x=>x.kind==='week'), 'Claude on the week');
+
+  // Her own words, clearly attributed and kept OUT of the computed summary:
+  // evidence and testimony sit beside each other, never blended.
+  const r0 = (refl||[])[0];
+  if (r0 && r0.submitted_at){
+    const row=(l,v)=>v?`<div style="margin-bottom:9px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu);margin-bottom:2px">${l}</div><div style="font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(v)}</div></div>`:'';
+    h += `<div class="card"><div class="ct">Her week, in her words</div>
+      ${row('What felt good', r0.felt_good)}${row('What was off', r0.was_off)}${row('Committing to next week', r0.commitment)}</div>`;
+  }
+
+  h += countdownHtml(tourn||[]);
 
   /* — commitments, planned vs actual — */
   h += `<div class="card"><div class="ct"><span>Commitments</span>
@@ -1728,21 +1877,46 @@ async function renderSummary(){
   h += `</div>`;
 
   /* — rounds this week — */
-  h += `<div class="card"><div class="ct">Rounds this week</div>`;
+  /* Quadrant % — Wes's headline number, on the page he actually reads.
+     A single round moves 5.6% per hole, so the week's figure is shown beside a
+     rolling last-5 and split comp vs social. That split is not decoration: the
+     gap between the two IS her choke signature, and closing it is the 2-year
+     goal. One computation, two jobs. */
+  const counted = (rounds||[]).filter(r=>!r.stats_excluded);
+  const quadOf = list => {
+    const st = list.map(getRoundStats).filter(x=>x.quadPct!=null);
+    if (!st.length) return null;
+    const hit = st.reduce((a,x)=>a+x.quadHit,0), n = st.reduce((a,x)=>a+x.n,0);
+    return n ? Math.round(hit*100/n) : null;
+  };
+  const wkQuad = quadOf(counted);
+  const wkComp = quadOf(counted.filter(r=>r.comp)), wkSoc = quadOf(counted.filter(r=>!r.comp));
+
+  h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
+      wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">Quadrant ${wkQuad}%</span>`:''}</div>`;
+  if (wkQuad!=null && (wkComp!=null||wkSoc!=null))
+    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Greens hit inside 30ft and puttable · ${
+      [wkSoc!=null?`social ${wkSoc}%`:null, wkComp!=null?`comp ${wkComp}%`:null].filter(Boolean).join(' · ')
+    }${(wkComp!=null&&wkSoc!=null)?` · <b style="color:${wkSoc-wkComp>10?'var(--rd)':'var(--tx)'}">gap ${wkSoc-wkComp>0?'-':'+'}${Math.abs(wkSoc-wkComp)}</b> under a card`:''}</div>`;
   if (!(rounds||[]).length) h += `<div class="empty">No rounds played.</div>`;
   for (const r of (rounds||[])){
     const s = getRoundStats(r);
     h += `<div class="rrow"><div style="display:flex;justify-content:space-between;gap:8px">
-        <b style="font-size:13.5px">${esc(r.date)}${r.course?' · '+esc(r.course):''}</b>
+        <b style="font-size:13.5px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--b2);text-underline-offset:3px"
+          onclick="openRound=${r.id};go('rounds')">${esc(r.date)}${r.course?' · '+esc(r.course):''}</b>
         ${r.comp?'<span class="bi">Comp</span>':''}</div>
       <div style="font-size:12px;color:var(--mu);display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">
         ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} par</span>`:''}
+        ${s.quadPct!=null?`<span style="font-weight:700;color:var(--tx)">Quad:${s.quadPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
-        ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}</div>
+        ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
+        ${r.stats_excluded?'<span class="bp">not counted</span>':''}</div>
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
   h += `</div>`;
+
+  h += claudeSummaryHtml((wsum||[]).find(x=>x.kind==='rounds'), 'Claude on the rounds');
 
   /* — goals + next tournament — */
   // Only what needs attention: NOW goals that are at-risk or stalled. A wall of
