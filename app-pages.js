@@ -741,7 +741,7 @@ function roundDetailHtml(r){
       </tbody></table></div>
     <div style="font-size:10px;color:var(--mu);margin-top:8px;line-height:1.6">
       <b>Fault-only card</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
-      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant · X dead
+      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant, 7i or shorter · X dead, any club
       <span style="opacity:.7">(W on older cards = wedge wrong side, retired 5 Aug 2026; counted as M)</span><br>
       <b>Short</b> C choked a makeable save (successful saves are derived, not ticked) &nbsp;·&nbsp;
       <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker &nbsp;·&nbsp;
@@ -798,7 +798,7 @@ function roundsLegendHtml(){
     </div>
     ${legendOpen?`<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.65">
       <b>Fault-only</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
-      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant · X dead<br>
+      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant, 7i or shorter · X dead, any club<br>
       <b>Short</b> C choked a makeable save (successful saves are derived, not ticked)<br>
       <b>Trbl</b> W water · O OB · U unplayable — <i>these carry a penalty stroke</i> · FB/GB bunker, no stroke<br>
       <b>GIR</b> green in regulation · <b>Putts</b> count
@@ -1110,7 +1110,7 @@ function holeBoxHtml(i){
     <div class="hole-r2">
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Drive s/x</span><input type="text" id="hdrive_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine · s advantage lost · x green gone"></div>
       <label class="hole-toggle"><input type="checkbox" id="hgir_${i}"> GIR</label>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">App m/x</span><input type="text" id="happ_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine · m missed the quadrant · x dead"></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">App m/x</span><input type="text" id="happ_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine · m missed the quadrant, 7i or shorter only · x dead, any club"></div>
     </div>
     <div class="hole-r3">
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
