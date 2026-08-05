@@ -1534,10 +1534,19 @@ const OPEN_WEEKS = 8;
 let OPENS = [];
 let openF = (() => {
   try { return JSON.parse(localStorage.getItem('gc_openf')) || null; } catch(e){ return null; }
-})() || {week:true, wend:true, h9:true, h18:true};
+})() || {week:true, wend:true, h9:true, h18:true, dist:75};
 
 function toggleOpenF(k){
   openF[k] = !openF[k];
+  localStorage.setItem('gc_openf', JSON.stringify(openF));
+  renderOpen();
+}
+
+// Distance is a single CHOICE, not three toggles: 20km is inside 50km is inside
+// 75km, so independent switches would let her pick combinations that cannot mean
+// anything. One wins, the others clear.
+function setOpenDist(km){
+  openF.dist = km;
   localStorage.setItem('gc_openf', JSON.stringify(openF));
   renderOpen();
 }
@@ -1550,8 +1559,14 @@ async function renderOpen(){
   // "rank" is a NARROWING switch, not another category: when it is on, nothing
   // but ranking events shows. They are what the 2-year goal points at, so being
   // able to see only those is worth one dedicated toggle.
+  // Ranking events ignore distance entirely, here as in the finder — worth
+  // travelling for. An unknown distance is kept too, same reasoning as the
+  // pull: a missing tournament is worse than an over-inclusive list.
+  const inRange = f => f.is_ranking || f.distance_km == null
+                       || Number(f.distance_km) <= (openF.dist || 75);
   const shown = OPENS.filter(f =>
     (!openF.rank || f.is_ranking) &&
+    inRange(f) &&
     ((f.is_weekend ? openF.wend : openF.week)) &&
     ((Number(f.holes) === 9 ? openF.h9 : openF.h18)));
 
@@ -1567,8 +1582,14 @@ async function renderOpen(){
       ${tgl('h9','9 holes',    OPENS.filter(f=>Number(f.holes)===9).length)}
       ${OPENS.some(f=>f.is_ranking)?tgl('rank','ÖGV ranking only', OPENS.filter(f=>f.is_ranking).length):''}
     </div>
+    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px">
+      ${[20,50,75].map(km=>`<button class="tgl ${(openF.dist||75)===km?'on':''}"
+          onclick="setOpenDist(${km})">${km}km<span style="opacity:.65;font-weight:400"> ${
+          OPENS.filter(f=>!f.is_ranking && f.distance_km!=null && Number(f.distance_km)<=km).length
+        }</span></button>`).join('')}
+    </div>
     <div class="empty" style="font-size:11px;padding:9px 0 0">
-      ${shown.length} of ${OPENS.length} · next ${OPEN_WEEKS} weeks · within 75km · handicap-relevant · open to guests
+      ${shown.length} of ${OPENS.length} · next ${OPEN_WEEKS} weeks · within ${openF.dist||75}km · handicap-relevant · open to guests · no seniors, juniors or men-only
     </div></div>`;
 
   if (!OPENS.length){
