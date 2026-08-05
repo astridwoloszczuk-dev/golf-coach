@@ -1825,6 +1825,123 @@ function countdownHtml(list){
       </div>`;}).join('')}</div>`;
 }
 
+/* ── The cumulative card, and the gap table ──────────────────────
+   Two buttons under Rounds this week, 5 Aug. Both answer a question a
+   list of rounds cannot: WHERE on the course it goes wrong, and how much
+   of it only goes wrong under a card.
+   ──────────────────────────────────────────────────────────────── */
+let roundsView = null;
+function setRoundsView(v){ roundsView = (roundsView===v) ? null : v; renderSummary(); }
+
+/* One row per hole across several rounds, shaped like the paper card, with the
+   column totals as PERCENTAGES on the top line. The rows show WHERE, the
+   percentages show HOW OFTEN — a coach reads the top line and only drops into
+   the rows when one of them looks wrong. */
+function cumScorecardHtml(rounds){
+  const cells = [];
+  for (let i=0;i<18;i++){
+    cells.push(rounds.map(r => ((r.holes_data||[])[i]||{}))
+      .filter(h => String(h.par==null?'':h.par)!=='' && String(h.score==null?'':h.score)!==''));
+  }
+  const flat = cells.reduce((a,x)=>a.concat(x),[]);
+  if (!flat.length) return `<div class="empty">No hole-by-hole data in these rounds.</div>`;
+
+  const lc = k => h => String(h[k]||'').toLowerCase();
+  const pc = f => Math.round(flat.filter(f).length*100/flat.length);
+  const pcts = [
+    ['GIR',   pc(h=>h.gir),                                 true],
+    ['Quad',  pc(h=>['m','x','w'].indexOf(lc('app')(h))<0),  true],
+    ['Drive', pc(h=>lc('drive')(h)===''),                    true],
+    ['Save',  pc(h=>lc('short')(h)!=='c'),                   true],
+    ['Trbl',  pc(h=>String(h.trbl||'').trim()!==''),         false],
+  ];
+  const cell = 'padding:3px 5px;text-align:center;white-space:nowrap';
+
+  return `<div style="display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 10px">
+      ${pcts.map(function(x){ const l=x[0],v=x[1],good=x[2];
+        const col = good ? (v>=60?'var(--gn)':v>=45?'var(--tx)':'var(--rd)')
+                         : (v<=15?'var(--gn)':'var(--rd)');
+        return `<div style="flex:1;min-width:60px;padding:7px 4px;border-radius:8px;border:1px solid var(--b1);text-align:center">
+          <div style="font-size:17px;font-weight:700;color:${col}">${v}%</div>
+          <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--mu);margin-top:1px">${l}</div>
+        </div>`; }).join('')}
+    </div>
+    <div style="font-size:10.5px;color:var(--mu);margin-bottom:8px">Across ${rounds.length} round${rounds.length===1?'':'s'} \u00b7 ${flat.length} holes played. Trbl counts up because it is the one where more is worse.</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+    <table style="border-collapse:collapse;font-size:11px;min-width:100%"><thead>
+      <tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
+        <th style="${cell};text-align:left">Hole</th><th style="${cell}">Plyd</th><th style="${cell}">Avg</th>
+        <th style="${cell}">GIR</th><th style="${cell}">Quad</th><th style="${cell}">Drv</th>
+        <th style="${cell}">Sht</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Cmt</th></tr>
+      </thead><tbody>
+      ${cells.map(function(hs,i){
+        if (!hs.length) return `<tr style="border-top:1px solid var(--b1);color:var(--b2)">
+          <td style="${cell};text-align:left;font-weight:600">${i+1}</td><td style="${cell}" colspan="9">\u2014</td></tr>`;
+        const avg = hs.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0)/hs.length;
+        const cnt = f => hs.filter(f).length;
+        const dots = hs.reduce((a,h)=>a+Number(h.cmt||0),0);
+        const trb = cnt(h=>String(h.trbl||'').trim());
+        return `<tr style="border-top:1px solid var(--b1)">
+          <td style="${cell};text-align:left;font-weight:600">${i+1}</td>
+          <td style="${cell};color:var(--mu)">${hs.length}</td>
+          <td style="${cell};font-weight:700;color:${avg<=0?'var(--gn)':avg<1?'var(--tx)':'var(--rd)'}">${avg>0?'+':''}${avg.toFixed(1)}</td>
+          <td style="${cell}">${cnt(h=>h.gir)}</td>
+          <td style="${cell}">${cnt(h=>['m','x','w'].indexOf(lc('app')(h))<0)}</td>
+          <td style="${cell}">${cnt(h=>lc('drive')(h)==='')}</td>
+          <td style="${cell}">${cnt(h=>lc('short')(h)==='c')||'\u00b7'}</td>
+          <td style="${cell};color:var(--mu)">${hs.reduce((a,h)=>a+Number(h.putts||0),0)||'\u00b7'}</td>
+          <td style="${cell};color:${trb?'var(--rd)':'var(--b1)'}">${trb||'\u00b7'}</td>
+          <td style="${cell};color:${dots?'var(--rd)':'var(--b1)'}">${dots||'\u00b7'}</td>
+        </tr>`; }).join('')}
+      </tbody></table></div>`;
+}
+
+/* Social versus competition, side by side. This is the point of the whole page:
+   the gap IS her signature and closing it is the 2-year goal. It needs a longer
+   window than one week or the comparison is noise, so it runs on every round
+   not marked excluded. */
+function gapTableHtml(all){
+  const soc = all.filter(r=>!r.comp), cmp = all.filter(r=>r.comp);
+  if (!soc.length || !cmp.length)
+    return `<div class="empty">Needs at least one of each \u2014 ${soc.length} social, ${cmp.length} competition.</div>`;
+  const agg = function(list){
+    const st = list.map(getRoundStats).filter(x=>x.n);
+    const n  = st.reduce((a,x)=>a+x.n,0);
+    const per18 = k => n ? (st.reduce((a,x)=>a+(x[k]||0),0)*18/n) : null;
+    return {rounds:st.length, delta:per18('delta'),
+            quad: n ? st.reduce((a,x)=>a+(x.quadHit||0),0)*100/n : null,
+            gir:per18('gir'), putts:per18('putts'), pen:per18('pen'), db:per18('db')};
+  };
+  const S = agg(soc), C = agg(cmp);
+  const rows = [
+    ['Rounds',           S.rounds, C.rounds, null,   0],
+    ['Score vs par /18', S.delta,  C.delta,  'low',  1],
+    ['Quadrant %',       S.quad,   C.quad,   'high', 0],
+    ['GIR /18',          S.gir,    C.gir,    'high', 1],
+    ['Putts /18',        S.putts,  C.putts,  'low',  1],
+    ['Penalties /18',    S.pen,    C.pen,    'low',  1],
+    ['Doubles+ /18',     S.db,     C.db,     'low',  1],
+  ];
+  const cell = 'padding:6px 6px;text-align:right;white-space:nowrap';
+  const f = (v,d) => v==null ? '\u2014' : Number(v).toFixed(d);
+  return `<div style="overflow-x:auto;margin-top:10px">
+    <table style="border-collapse:collapse;font-size:12.5px;width:100%"><thead>
+      <tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
+        <th style="${cell};text-align:left">&nbsp;</th><th style="${cell}">Social</th>
+        <th style="${cell}">Comp</th><th style="${cell}">Gap</th></tr></thead><tbody>
+      ${rows.map(function(r){
+        const l=r[0], a=r[1], c=r[2], dir=r[3], d=r[4];
+        const gap = (a==null||c==null||dir==null) ? null : c-a;
+        const bad = gap!=null && ((dir==='low' && gap>0) || (dir==='high' && gap<0));
+        return `<tr style="border-top:1px solid var(--b1)">
+          <td style="${cell};text-align:left;color:var(--mu)">${l}</td>
+          <td style="${cell}">${f(a,d)}</td><td style="${cell}">${f(c,d)}</td>
+          <td style="${cell};font-weight:700;color:${gap==null?'var(--mu)':bad?'var(--rd)':'var(--gn)'}">
+            ${gap==null?'\u2014':(gap>0?'+':'')+Number(gap).toFixed(d)}</td></tr>`; }).join('')}
+      </tbody></table></div>
+    <div style="font-size:10.5px;color:var(--mu);margin-top:8px">Everything per 18 holes so part-rounds compare honestly. Excluded rounds left out. Red means competition is the worse of the two.</div>`;
+}
+
 async function renderSummary(){
   const wk = ymd(WEEK), wkEnd = ymd(addDays(WEEK,6));
   const back4 = ymd(addDays(WEEK,-21));   // this week + 3 back, for the streak check
@@ -1833,7 +1950,9 @@ async function renderSummary(){
   const [asg, subs, rounds, goals, tourn, note, wsum, refl] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category)&week_start=gte.${back4}&week_start=lte.${wk}&order=week_start.asc`),
     sel('week_submissions', `select=submitted_at,snapshot&week_start=eq.${wk}&order=submitted_at.asc`),
-    sel('golf_rounds', `select=*&date=gte.${wk}&date=lte.${wkEnd}&order=date.asc`),
+    // A YEAR of rounds, not a week: the gap table compares social with
+    // competition, and one week of two rounds is not a comparison.
+    sel('golf_rounds', `select=*&date=gte.${ymd(addDays(WEEK,-365))}&date=lte.${wkEnd}&order=date.asc`),
     sel('goals', 'select=*&order=horizon.asc,sort.asc'),
     // his spec: the next one, plus everything else inside a fortnight
     sel('tournaments', `select=*&date=gte.${todayYmd()}&date=lte.${fortnight}&order=date.asc`),
@@ -1881,6 +2000,9 @@ async function renderSummary(){
         score:t.score, when:t.date, note:t.notes}))) : ''}
   </div>`;
 
+  // ONE briefing, not two. The pair overlapped badly — both narrated the
+  // rounds — and tournaments came out of it entirely because the countdown sits
+  // at the foot of this same page. Fewer words, no repetition.
   h += claudeSummaryHtml((wsum||[]).find(x=>x.kind==='week'), 'Claude on the week');
 
   // Her own words, clearly attributed and kept OUT of the computed summary:
@@ -1892,75 +2014,17 @@ async function renderSummary(){
       ${row('What felt good', r0.felt_good)}${row('What was off', r0.was_off)}${row('Committing to next week', r0.commitment)}</div>`;
   }
 
-  h += countdownHtml(tourn||[]);
-
-  /* — commitments, planned vs actual — */
-  h += `<div class="card"><div class="ct"><span>Commitments</span>
-      <span class="bg ${done.length===planned.length&&planned.length?'bg-good':missed.length>planned.length/2?'bg-bad':'bg-warn'}">${done.length}/${planned.length} done</span></div>`;
-  if (!planned.length){
-    h += `<div class="empty">Nothing placed on a day this week.${parked.length?' '+parked.length+' still sitting in the tray.':''}</div>`;
-  } else {
-    const committed = (subs&&subs.length) ? subs[0].snapshot : null;
-    h += `<div class="empty" style="padding:0 0 8px">${committed
-      ? 'Committed '+new Date(subs[0].submitted_at).toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})+
-        (committed.length!==planned.length ? ` · plan has since changed (${committed.length} → ${planned.length})` : '')
-      : 'Not submitted — this is the live grid.'}</div>`;
-    for (const d of weekDays()){
-      const items = planned.filter(a => a.day_index === d.i);
-      if (!items.length) continue;
-      h += `<div style="display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--b1)">
-        <b style="font-size:12px;min-width:34px;color:var(--mu)">${d.label}</b>
-        <div style="flex:1;font-size:13.5px;line-height:1.5">${items.map(a =>
-          `${a.done?'<span class="good">✓</span>':'<span class="bad">✗</span>'} ${esc((a.drills||{}).name||'—')}` +
-          (nn(a.score)?` <b style="color:var(--ac)">${a.score}</b>`:'') +
-          (a.note?`<div style="font-size:11.5px;color:var(--mu);font-style:italic;margin:1px 0 0 15px">${esc(a.note)}</div>`:'')
-        ).join('<br>')}</div></div>`;
-    }
-  }
-  // Misses made explicit — and named when they repeat.
+  /* KEPT, though she asked for the commitments card to go: a drill skipped
+     three weeks running is not visible anywhere else. The tile detail shows
+     THIS week; a streak only exists across weeks, and it is exactly what a
+     coach needs to see. Reduced to one line rather than a card. */
   const streaks = skipStreaks(asg||[], wk);
-  if (streaks.length || missed.length){
-    h += `<div style="margin-top:11px;padding:10px 12px;border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.07);border-radius:9px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--rd);margin-bottom:4px">Misses</div>
-      <div style="font-size:13px;line-height:1.6">${
-        (streaks.map(s=>`<b>${esc(catLabel(s.cat))}</b> skipped ${s.n} week${s.n===1?'':'s'} running`)
-          .concat(missed.length ? [`${missed.length} planned session${missed.length===1?'':'s'} not ticked off this week`] : [])
-        ).join('<br>')}</div></div>`;
+  if (streaks.length){
+    h += `<div style="margin:-4px 0 12px;padding:9px 12px;border-radius:9px;
+        border:1px solid rgba(248,113,113,.35);background:rgba(248,113,113,.07);font-size:12.5px;line-height:1.6">
+      ${streaks.map(x=>`<b>${esc(catLabel(x.cat))}</b> skipped ${x.n} week${x.n===1?'':'s'} running`).join('<br>')}
+    </div>`;
   }
-  h += `</div>`;
-
-  /* — drill scores with trend — */
-  const scored = planned.filter(a => nn(a.score));
-  h += `<div class="card"><div class="ct">Drill &amp; game scores</div>`;
-  if (!scored.length) h += `<div class="empty">Nothing scored this week.</div>`;
-  for (const a of scored){
-    const hist = (asg||[]).filter(x => x.drill_id===a.drill_id && x.week_start < wk && nn(x.score)).map(x=>Number(x.score));
-    const avg = hist.length ? hist.reduce((s,v)=>s+v,0)/hist.length : null;
-    const d = avg==null ? null : Number(a.score) - avg;
-    h += `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--b1)">
-      <div style="flex:1;font-size:13.5px">${esc((a.drills||{}).name||'—')}
-        <div style="font-size:11px;color:var(--mu)">${esc(catLabel((a.drills||{}).category))}</div></div>
-      <b style="font-size:17px">${a.score}</b>
-      <span class="bg ${d==null?'bg-student':d>0?'bg-good':d<0?'bg-bad':'bg-student'}" style="min-width:56px;text-align:center">
-        ${d==null ? 'first' : (d>0?'+':'')+(Math.round(d*10)/10)+' vs avg'}</span></div>`;
-  }
-  h += `</div>`;
-
-  /* — rounds this week — */
-  /* Quadrant % — Wes's headline number, on the page he actually reads.
-     A single round moves 5.6% per hole, so the week's figure is shown beside a
-     rolling last-5 and split comp vs social. That split is not decoration: the
-     gap between the two IS her choke signature, and closing it is the 2-year
-     goal. One computation, two jobs. */
-  const counted = (rounds||[]).filter(r=>!r.stats_excluded);
-  const quadOf = list => {
-    const st = list.map(getRoundStats).filter(x=>x.quadPct!=null);
-    if (!st.length) return null;
-    const hit = st.reduce((a,x)=>a+x.quadHit,0), n = st.reduce((a,x)=>a+x.n,0);
-    return n ? Math.round(hit*100/n) : null;
-  };
-  const wkQuad = quadOf(counted);
-  const wkComp = quadOf(counted.filter(r=>r.comp)), wkSoc = quadOf(counted.filter(r=>!r.comp));
 
   h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
       wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">Quadrant ${wkQuad}%</span>`:''}</div>`;
@@ -1968,8 +2032,9 @@ async function renderSummary(){
     h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Greens hit inside 30ft and puttable · ${
       [wkSoc!=null?`social ${wkSoc}%`:null, wkComp!=null?`comp ${wkComp}%`:null].filter(Boolean).join(' · ')
     }${(wkComp!=null&&wkSoc!=null)?` · <b style="color:${wkSoc-wkComp>10?'var(--rd)':'var(--tx)'}">gap ${wkSoc-wkComp>0?'-':'+'}${Math.abs(wkSoc-wkComp)}</b> under a card`:''}</div>`;
-  if (!(rounds||[]).length) h += `<div class="empty">No rounds played.</div>`;
-  for (const r of (rounds||[])){
+  if (!(rounds||[]).filter(r=>r.date >= wk && r.date <= wkEnd).length)
+    h += `<div class="empty">No rounds played.</div>`;
+  for (const r of (rounds||[]).filter(r=>r.date >= wk && r.date <= wkEnd)){
     const s = getRoundStats(r);
     h += `<div class="rrow"><div style="display:flex;justify-content:space-between;gap:8px">
         <b style="font-size:13.5px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--b2);text-underline-offset:3px"
@@ -1985,9 +2050,20 @@ async function renderSummary(){
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
-  h += `</div>`;
+  // Two ways in that a list of rounds cannot give him: where on the course it
+  // goes wrong, and how much of it only goes wrong under a card. The gap table
+  // runs on ALL rounds, not this week's — a fortnight of data would be noise.
+  h += `<div class="rbtns" style="margin:-4px 0 12px">
+      <button class="btn btns ${roundsView==='card'?'btnp':''}" onclick="setRoundsView('card')">Cumulative scorecard</button>
+      <button class="btn btns ${roundsView==='gap'?'btnp':''}" onclick="setRoundsView('gap')">Social vs competition</button>
+    </div>`;
+  if (roundsView==='card' || roundsView==='gap'){
+    h += `<div class="card">
+      <div class="ct">${roundsView==='card' ? 'Every hole, this week' : 'Social vs competition \u00b7 all rounds'}</div>
+      ${roundsView==='card' ? cumScorecardHtml(counted) : gapTableHtml(allCounted)}</div>`;
+  }
 
-  h += claudeSummaryHtml((wsum||[]).find(x=>x.kind==='rounds'), 'Claude on the rounds');
+  h += countdownHtml(tourn||[]);
 
   /* — goals + next tournament — */
   // Only what needs attention: NOW goals that are at-risk or stalled. A wall of
