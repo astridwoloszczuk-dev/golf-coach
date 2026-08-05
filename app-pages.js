@@ -1456,12 +1456,71 @@ let TOURN = [];
 let CHECKINS = [];
 const checkIn = (tid, phase) => CHECKINS.find(c => c.tournament_id === tid && c.phase === phase);
 
+/* ── Tournaments she could enter ─────────────────────────────────
+   Pulled daily from golf.at by tournament_finder.py on James, filtered
+   to within 75km of 1130, handicap-relevant and open to guests. Her
+   ask: "here are the possible tournaments, pick one" — searching
+   golf.at herself is the annoying part, not entering.
+
+   WEEKDAY IS THE DEFAULT TAB, not weekend, because weekday events are
+   the ones she actually wants. Weekend ones are kept rather than
+   filtered away, on their own tab, so the decision stays hers.
+
+   18-hole reads bold and full-strength, 9-hole deliberately quieter —
+   her words, "18 is obviously much better". The list should say that
+   before it is read.
+   ──────────────────────────────────────────────────────────────── */
+let FINDS = [], findsTab = 'week';
+function setFindsTab(t){ findsTab = t; renderTournaments(); }
+
+async function dismissFind(id){
+  await upd('tournament_finds', 'id=eq.'+id, {dismissed:true});
+  FINDS = FINDS.filter(f => f.id !== id);
+  renderTournaments();
+}
+
+function findsHtml(){
+  if (!FINDS.length) return '';
+  const wk  = FINDS.filter(f => !f.is_weekend);
+  const we  = FINDS.filter(f =>  f.is_weekend);
+  const list = findsTab === 'week' ? wk : we;
+  const tab = (id, label, n) => `<button class="btn btns ${findsTab===id?'btnp':''}"
+      onclick="setFindsTab('${id}')">${label}${n?' · '+n:''}</button>`;
+
+  return `<div class="card">
+    <div class="ct"><span>Could enter</span>
+      <span style="font-size:10px;color:var(--mu)">within 75km · hcp-relevant · open to guests</span></div>
+    <div class="rbtns" style="margin:0 0 10px">${tab('week','Weekdays',wk.length)}${tab('wend','Weekends',we.length)}</div>
+    ${!list.length ? `<div class="empty">Nothing on this tab.</div>` : list.map(f => {
+      const big = f.holes === 18;
+      return `<div style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--b1)">
+        <span style="font-size:11px;color:var(--mu);min-width:52px;white-space:nowrap">${fmtDay(parseYmd(f.date))}</span>
+        <div style="flex:1;min-width:0">
+          <a href="${esc(f.url||'#')}" target="_blank" rel="noopener"
+             style="font-size:${big?'14':'12.5'}px;font-weight:${big?'700':'500'};
+                    color:${big?'var(--tx)':'var(--mu)'};text-decoration:none">${esc(f.name)}</a>
+          <div style="font-size:11px;color:var(--mu);margin-top:2px">
+            <span style="color:${big?'var(--ac)':'var(--mu)'};font-weight:${big?'700':'400'}">${f.holes} holes</span>
+            ${f.club?' · '+esc(f.club):''}${f.distance_km!=null?' · '+f.distance_km+'km':' · distance unknown'}
+          </div>
+        </div>
+        ${ME.role==='student'?`<button class="btn btns" title="Not interested"
+           onclick="dismissFind(${f.id})">✕</button>`:''}
+      </div>`;
+    }).join('')}
+    <div class="empty" style="font-size:11px;padding:9px 0 0">Tapping one opens its golf.at entry page. Dismissing only hides it here.</div>
+  </div>`;
+}
+
 async function renderTournaments(){
-  [TOURN, CHECKINS] = await Promise.all([
+  [TOURN, CHECKINS, FINDS] = await Promise.all([
     sel('tournaments','select=*&order=date.desc'),
     selSoft('check_ins','select=*'),      // absent until migration 03 is run
+    // absent until migration 12 + the daily pull; fails soft to an empty list
+    selSoft('tournament_finds',
+      `select=*&dismissed=is.false&date=gte.${todayYmd()}&order=date.asc`),
   ]);
-  TOURN = TOURN || []; CHECKINS = CHECKINS || [];
+  TOURN = TOURN || []; CHECKINS = CHECKINS || []; FINDS = FINDS || [];
   const today = todayYmd();
   let h = ME.role==='student'
     ? `<div class="rbtns" style="margin:0 0 12px"><button class="btn btnp" onclick="editTournament(null)">＋ Add tournament</button></div>` : '';
@@ -1474,6 +1533,8 @@ async function renderTournaments(){
     for (const t of future) h += tournamentRow(t, true);
     h += `</div>`;
   }
+  h += findsHtml();
+
   let curMonth = null, open = false;
   for (const t of past){
     const d = parseYmd(t.date);
