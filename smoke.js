@@ -82,7 +82,7 @@ global.fetch = async () => ({ ok:true, status:200, headers:{ get:()=>null },
 // golf-coach names them renderX; the habit app just has render(). Both listed
 // so one harness covers both PWAs.
 const RENDERERS = ['renderGoals','renderWeek','renderDrills','renderRounds',
-                   'renderTournaments','renderSummary','renderFeedback','render'];
+                   'renderTournaments','renderSummary','renderFeedback','renderOpen','render'];
 
 const harness = `
 ${inline.join('\n;\n')}

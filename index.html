@@ -70,6 +70,9 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .sect{font-size:19px;font-weight:750;letter-spacing:-.2px;margin-bottom:12px;
   display:flex;justify-content:space-between;align-items:center;gap:8px;line-height:1.25}
 .sect .bar{display:block;height:3px;width:34px;border-radius:2px;margin-top:7px}
+.tgl{padding:6px 12px;border-radius:999px;border:1px solid var(--b2);background:var(--s2);
+  color:var(--mu);font-size:12.5px;font-weight:600;cursor:pointer}
+.tgl.on{background:var(--ac);border-color:var(--ac);color:#0d1117}
 .ynpill{width:34px;height:30px;border:1px solid var(--b2);border-radius:7px;background:var(--s2);
   color:var(--mu);font-size:14px;font-weight:700;cursor:pointer;line-height:1}
 .dl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--mu);margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--b1)}
@@ -266,6 +269,7 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
   <div id="pg-drills"       class="pg"></div>
   <div id="pg-rounds"       class="pg"></div>
   <div id="pg-tournaments"  class="pg"></div>
+  <div id="pg-open"         class="pg"></div>
   <div id="pg-summary"      class="pg"></div>
   <div id="pg-feedback"     class="pg"></div>
 </div>
@@ -278,6 +282,7 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
     <a data-go="drills">Drills + Games</a>
     <a data-go="rounds">Rounds</a>
     <a data-go="tournaments">Tournaments</a>
+    <a data-go="open">Open Tournaments</a>
     <a data-go="summary">Weekly Summary</a>
     <a data-go="feedback">Feedback</a>
     <div class="sep"></div>
@@ -700,6 +705,7 @@ const PAGES = {
   // and back lands on the round list, not a stale form.
   rounds:      {title:'Rounds',             render:()=>{resetRounds(); return renderRounds();}},
   tournaments: {title:'Tournaments',        render:()=>renderTournaments()},
+  open:        {title:'Open Tournaments',   render:()=>renderOpen()},
   summary:     {title:'Weekly Summary',     render:()=>renderSummary()},
   feedback:    {title:'Feedback',           render:()=>renderFeedback()},
 };
@@ -804,6 +810,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260805-7"></script>
+<script src="app-pages.js?v=20260805-8"></script>
 </body>
 </html>

@@ -1512,6 +1512,110 @@ function findsHtml(){
   </div>`;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   8 · OPEN TOURNAMENTS — what she could enter
+
+   Pulled daily from golf.at by tournament_finder.py on James: within
+   75km of 1130, handicap-relevant, open to guests, cancelled ones
+   already dropped. Her ask was never entry — it was that SEARCHING
+   golf.at is annoying.
+
+   FOUR INDEPENDENT TOGGLES rather than tabs, because the useful
+   questions cross each other: "18-hole weekdays" is the one she
+   actually wants, and a tab layout cannot express it. All four on =
+   everything. Choices persist, so the filter she lives in survives a
+   reload.
+
+   CAPPED AT 8 WEEKS, her call. The table holds the whole season; a
+   phone does not want 181 rows, and anything further out is not a
+   decision she is making today.
+   ═══════════════════════════════════════════════════════════════ */
+const OPEN_WEEKS = 8;
+let OPENS = [];
+let openF = (() => {
+  try { return JSON.parse(localStorage.getItem('gc_openf')) || null; } catch(e){ return null; }
+})() || {week:true, wend:true, h9:true, h18:true};
+
+function toggleOpenF(k){
+  openF[k] = !openF[k];
+  localStorage.setItem('gc_openf', JSON.stringify(openF));
+  renderOpen();
+}
+
+async function renderOpen(){
+  const until = ymd(addDays(parseYmd(todayYmd()), OPEN_WEEKS*7));
+  OPENS = await selSoft('tournament_finds',
+    `select=*&dismissed=is.false&date=gte.${todayYmd()}&date=lte.${until}&order=date.asc`) || [];
+
+  // "rank" is a NARROWING switch, not another category: when it is on, nothing
+  // but ranking events shows. They are what the 2-year goal points at, so being
+  // able to see only those is worth one dedicated toggle.
+  const shown = OPENS.filter(f =>
+    (!openF.rank || f.is_ranking) &&
+    ((f.is_weekend ? openF.wend : openF.week)) &&
+    ((Number(f.holes) === 9 ? openF.h9 : openF.h18)));
+
+  const tgl = (k, label, n) =>
+    `<button class="tgl ${openF[k]?'on':''}" onclick="toggleOpenF('${k}')">${label}<span
+       style="opacity:.65;font-weight:400"> ${n}</span></button>`;
+
+  let h = `<div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:7px">
+      ${tgl('week','Weekdays', OPENS.filter(f=>!f.is_weekend).length)}
+      ${tgl('wend','Weekends', OPENS.filter(f=> f.is_weekend).length)}
+      ${tgl('h18','18 holes',  OPENS.filter(f=>Number(f.holes)===18).length)}
+      ${tgl('h9','9 holes',    OPENS.filter(f=>Number(f.holes)===9).length)}
+      ${OPENS.some(f=>f.is_ranking)?tgl('rank','ÖGV ranking only', OPENS.filter(f=>f.is_ranking).length):''}
+    </div>
+    <div class="empty" style="font-size:11px;padding:9px 0 0">
+      ${shown.length} of ${OPENS.length} · next ${OPEN_WEEKS} weeks · within 75km · handicap-relevant · open to guests
+    </div></div>`;
+
+  if (!OPENS.length){
+    h += `<div class="card"><div class="empty">Nothing pulled yet. The list refreshes daily.</div></div>`;
+    el('pg-open').innerHTML = h; return;
+  }
+  if (!shown.length){
+    h += `<div class="card"><div class="empty">Nothing matches those toggles.</div></div>`;
+    el('pg-open').innerHTML = h; return;
+  }
+
+  // Grouped by day so a week reads as a week, not as 90 identical lines.
+  let cur = null, open = false;
+  for (const f of shown){
+    if (f.date !== cur){
+      if (open) h += `</div>`;
+      const d = parseYmd(f.date);
+      const away = Math.round((d - parseYmd(todayYmd()))/86400000);
+      h += `<div class="card"><div class="ct"><span>${DAY_LONG?DAY_LONG[(d.getDay()+6)%7]+' · ':''}${fmtDay(d)}</span>
+        <span style="font-size:10px;color:var(--mu)">${away===0?'today':away===1?'tomorrow':'in '+away+' days'}</span></div>`;
+      cur = f.date; open = true;
+    }
+    // 18 bold and full strength, 9 deliberately quieter - "18 is obviously
+    // much better", so the list should say so before it is read.
+    const big = Number(f.holes) === 18;
+    h += `<div style="display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--b1)">
+      <span style="font-size:11px;font-weight:700;min-width:26px;color:${big?'var(--ac)':'var(--mu)'}">${f.holes}h</span>
+      <div style="flex:1;min-width:0">
+        <a href="${esc(f.url||'#')}" target="_blank" rel="noopener"
+           style="font-size:${big?'14':'12.5'}px;font-weight:${big?'700':'500'};
+                  color:${big?'var(--tx)':'var(--mu)'};text-decoration:none">${esc(f.name)}</a>
+        ${f.is_ranking?'<span class="bi" style="margin-left:6px">ÖGV ranking</span>':''}
+        <div style="font-size:11px;color:var(--mu);margin-top:2px">
+          ${f.club?esc(f.club):''}${f.distance_km!=null?' · '+f.distance_km+'km':' · distance unknown'}</div>
+      </div>
+      ${ME.role==='student'?`<button class="btn btns" title="Not interested" onclick="dismissOpen(${f.id})">✕</button>`:''}
+    </div>`;
+  }
+  if (open) h += `</div>`;
+  el('pg-open').innerHTML = h;
+}
+
+async function dismissOpen(id){
+  await upd('tournament_finds', 'id=eq.'+id, {dismissed:true});
+  renderOpen();
+}
+
 async function renderTournaments(){
   [TOURN, CHECKINS, FINDS] = await Promise.all([
     sel('tournaments','select=*&order=date.desc'),
@@ -1533,8 +1637,6 @@ async function renderTournaments(){
     for (const t of future) h += tournamentRow(t, true);
     h += `</div>`;
   }
-  h += findsHtml();
-
   let curMonth = null, open = false;
   for (const t of past){
     const d = parseYmd(t.date);
