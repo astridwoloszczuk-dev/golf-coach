@@ -849,7 +849,7 @@ function cancelRound(){ roundMode='select'; editId=null; scanFiles=[null,null]; 
 function deriveRoundStats(hd){
   const Z={n:0,delta:null,gir:null,fw:null,ud:null,p3:null,db:null,b5:null,pen:null,bs:null,
            drvS:null,drvX:null,appM:null,appW:null,appX:null,shC:null,putts:null,penStk:null,bunk:null,hero:null,
-           quadHit:null,quadPct:null,cmtPct:null,cmtDots:null};
+           quadHit:null,quadPct:null,posHit:null,posPct:null,cmtPct:null,cmtDots:null};
   if(!hd||!hd.length)return Z;
   const played=hd.filter(h=>h.par!=null&&h.par!==''&&h.score!=null&&h.score!=='');
   const n=played.length;
@@ -895,31 +895,43 @@ function deriveRoundStats(hd){
     o.bunk=played.filter(h=>['FB','GB'].includes(tr(h))).length;
     o.pen=o.penStk;
 
-    /* CLEAN APPROACH % — Wes's headline metric, renamed 5 Aug (evening).
+    /* SCORING POSITION % — Wes's headline metric. Astrid's design, 5 Aug
+       evening, and it is a genuine improvement on what I had.
 
-       It was called "Quadrant %", which asserted something the data cannot
-       support. Blank in the App column means "fine FOR THE CLUB IN HAND": with
-       a 6-iron or more she leaves it blank for any green hit, wrong quadrant or
-       not, because at that range the wrong quadrant is not a fault. So the
-       number never measured "inside 30ft" — it measures how often the approach
-       did not cost her, judged by her at the time. That is a perfectly good
-       metric; it just needed a name that is true.
+       It began as "Quadrant %" over m and x. That name claimed 30ft, which the
+       data cannot support: `m` is only ever marked on a SCORING-CLUB approach,
+       7i or shorter. A 6-iron or longer leaves the cell blank whatever happens.
 
-       `c` is deliberately NOT counted here. It is a Short-game mark - a
-       makeable save choked AFTER the green was missed - so counting it would
-       score the same hole twice, once for the approach and once for what
-       happened next.
-       Reported as a HIT rate, not a miss rate. It is a refinement of GIR and
-       GIR is universally quoted as a hit rate, so showing its stricter cousin
-       as a miss rate would have the two reading in opposite directions on the
-       same line. It also counts UP, which matters in the one domain where her
-       worth is conditional.
-       BOTH m AND x count as misses. On m alone, a round where she was dead on
-       five holes would score BETTER than one where she was 40 feet away five
-       times — being further from the quadrant would improve the number.
-       Denominator is every played hole: App is assessed on all of them (par 3
-       = the tee shot, par 5 = 2nd and 3rd, worst counts). */
-    o.quadHit = n - o.appM - o.appX;   // clean approaches
+       Which left a hole in the measurement, not just in the name: on a long
+       approach NO fault was possible, so long courses quietly flattered the
+       figure. I was going to document that and move on. Her fix is better —
+       add `c`.
+
+       Her reasoning: when she misses a green it is usually with a long club,
+       and then the chip is the shot that decides whether par was ever
+       available. `c` is not "chunked" — it is any chip that does not finish
+       inside about 10ft, unless the lie was bad enough that anywhere on the
+       green was a good result. So `c` is the long-hole equivalent of missing
+       the quadrant: the same failure, one shot later.
+
+       With it, EVERY hole has a route to a fault and the metric stops
+       depending on how long the course is:
+         7i or shorter, quadrant hit ........ blank   in position
+         7i or shorter, quadrant missed ..... m       not
+         6i or longer, green hit ............ blank   in position
+         6i or longer, missed, chip close ... blank   in position
+         6i or longer, missed, chip not ..... c       not
+         dead ............................... x       not
+
+       COMPUTED PER HOLE, NOT BY COUNTING MARKS. A hole can carry both an `m`
+       and a `c` — miss the quadrant with a wedge, then chip badly — and
+       subtracting mark counts would punish that hole twice and can drive the
+       figure below zero on a bad enough round. */
+    o.posHit = played.filter(h => ['m','x','w'].indexOf(ap(h)) < 0 && sh(h) !== 'c').length;
+    o.posPct = n ? Math.round(o.posHit * 100 / n) : null;
+    // kept as the approach-only view, for when the question is specifically
+    // about the approach rather than about reaching a scoring position
+    o.quadHit = n - o.appM - o.appX;
     o.quadPct = n ? Math.round(o.quadHit * 100 / n) : null;
 
     /* COMMITMENT % — dots marked AFTER each shot, per Wes and her call that it
@@ -2063,8 +2075,8 @@ function cumScorecardHtml(rounds){
     ['Holes',  holes.length, null],
     ['vs par', (delta > 0 ? '+' : '') + delta, delta <= 0],
     ['GIR',    pc(h => h.gir) + '%', pc(h => h.gir) >= 50],
-    ['Clean app', pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0) + '%',
-                  pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0) >= 60],
+    ['In position', pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0 && lc('short')(h) !== 'c') + '%',
+                    pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0 && lc('short')(h) !== 'c') >= 60],
     ['Putts',  tot('putts') || '\u00b7', null],
   ];
   const cell = 'padding:3px 5px;text-align:center;white-space:nowrap';
@@ -2123,14 +2135,14 @@ function gapTableHtml(all){
     const n  = st.reduce((a,x)=>a+x.n,0);
     const per18 = k => n ? (st.reduce((a,x)=>a+(x[k]||0),0)*18/n) : null;
     return {rounds:st.length, delta:per18('delta'),
-            quad: n ? st.reduce((a,x)=>a+(x.quadHit||0),0)*100/n : null,
+            quad: n ? st.reduce((a,x)=>a+(x.posHit||0),0)*100/n : null,
             gir:per18('gir'), putts:per18('putts'), pen:per18('pen'), db:per18('db')};
   };
   const S = agg(soc), C = agg(cmp);
   const rows = [
     ['Rounds',           S.rounds, C.rounds, null,   0],
     ['Score vs par /18', S.delta,  C.delta,  'low',  1],
-    ['Clean approach %', S.quad,   C.quad,   'high', 0],
+    ['Scoring position %', S.quad,  C.quad,   'high', 0],
     ['GIR /18',          S.gir,    C.gir,    'high', 1],
     ['Putts /18',        S.putts,  C.putts,  'low',  1],
     ['Penalties /18',    S.pen,    C.pen,    'low',  1],
@@ -2253,9 +2265,9 @@ async function renderSummary(){
   const allCounted = (rounds||[]).filter(r=>!r.stats_excluded);
   const counted    = allCounted.filter(r=>r.date >= wk && r.date <= wkEnd);
   const quadOf = list => {
-    const st = list.map(getRoundStats).filter(x=>x.quadPct!=null);
+    const st = list.map(getRoundStats).filter(x=>x.posPct!=null);
     if (!st.length) return null;
-    const hit = st.reduce((a,x)=>a+x.quadHit,0), n = st.reduce((a,x)=>a+x.n,0);
+    const hit = st.reduce((a,x)=>a+x.posHit,0), n = st.reduce((a,x)=>a+x.n,0);
     return n ? Math.round(hit*100/n) : null;
   };
   const wkQuad = quadOf(counted);
@@ -2287,9 +2299,9 @@ async function renderSummary(){
   }
 
   h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
-      wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">Clean app ${wkQuad}%</span>`:''}</div>`;
+      wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">In position ${wkQuad}%</span>`:''}</div>`;
   if (wkQuad!=null && (wkComp!=null||wkSoc!=null))
-    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Approaches that cost her nothing · ${
+    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Holes reaching a realistic scoring position · ${
       [wkSoc!=null?`social ${wkSoc}%`:null, wkComp!=null?`comp ${wkComp}%`:null].filter(Boolean).join(' · ')
     }${(wkComp!=null&&wkSoc!=null)?` · <b style="color:${wkSoc-wkComp>10?'var(--rd)':'var(--tx)'}">gap ${wkSoc-wkComp>0?'-':'+'}${Math.abs(wkSoc-wkComp)}</b> under a card`:''}</div>`;
   if (!(rounds||[]).filter(r=>r.date >= wk && r.date <= wkEnd).length)
@@ -2302,7 +2314,7 @@ async function renderSummary(){
         ${r.comp?'<span class="bi">Comp</span>':''}</div>
       <div style="font-size:12px;color:var(--mu);display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">
         ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} par</span>`:''}
-        ${s.quadPct!=null?`<span style="font-weight:700;color:var(--tx)">App:${s.quadPct}%</span>`:''}
+        ${s.posPct!=null?`<span style="font-weight:700;color:var(--tx)">Pos:${s.posPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
         ${s.cmtPct!=null?`<span style="font-weight:700;color:var(--tx)">Cmt:${s.cmtPct}%</span>`:''}
