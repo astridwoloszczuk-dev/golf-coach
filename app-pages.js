@@ -2457,22 +2457,6 @@ function claudeSummaryHtml(row, title){
     <div style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(row.body)}</div></div>`;
 }
 
-// Next tournament, plus everything else inside a fortnight — his words.
-function countdownHtml(list){
-  if (!list.length) return `<div class="card"><div class="ct">Coming up</div>
-    <div class="empty">Nothing in the next two weeks.</div></div>`;
-  const today = parseYmd(todayYmd());
-  return `<div class="card"><div class="ct">Coming up</div>
-    ${list.map((t,i)=>{
-      const d = Math.round((parseYmd(t.date)-today)/86400000);
-      const lbl = d===0?'today':d===1?'tomorrow':`in ${d} days`;
-      return `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;
-          padding:9px 0;${i?'border-top:1px solid var(--b1)':''}">
-        <div><b style="font-size:${i?'13.5':'15'}px">${esc(t.name)}</b>
-          <div style="font-size:11.5px;color:var(--mu);margin-top:2px">${esc(t.date)}${t.venue?' \u00b7 '+esc(t.venue):''}</div></div>
-        <b style="font-size:${i?'13':'15'}px;color:${d<=2?'var(--ac)':'var(--tx)'};white-space:nowrap">${lbl}</b>
-      </div>`;}).join('')}</div>`;
-}
 
 /* ── The cumulative card, and the gap table ──────────────────────
    Two buttons under Rounds this week, 5 Aug. Both answer a question a
@@ -2801,7 +2785,6 @@ async function renderSummary(){
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
   h += await mindWeekHtml(wk);
-  h += countdownHtml(tourn||[]);
 
   /* — goals + next tournament — */
   // Only what needs attention: NOW goals that are at-risk or stalled. A wall of
@@ -2817,7 +2800,16 @@ async function renderSummary(){
   }
 
   if ((tourn||[]).length){
+    /* ONE tournament block, not two. "Coming up" and "Next tournament" listed
+       the same events — the first as a countdown, the second with her check-in
+       attached — which read as repetition rather than as two views.
+
+       So: the next one in full, with the pre-round check-in, and beneath it
+       anything else inside SEVEN days. A fortnight was too long a horizon for a
+       page about this week; a second event next Tuesday is context, one in
+       eleven days is not. */
     const t = tourn[0], days = daysBetween(todayYmd(), t.date);
+    const soon = (tourn||[]).slice(1).filter(x => daysBetween(todayYmd(), x.date) <= 7);
     const ci = await selSoft('check_ins', `select=*&tournament_id=eq.${t.id}`);
     const pre = ci.find(c => c.phase === 'pre');
     const preLine = pre
@@ -2832,7 +2824,18 @@ async function renderSummary(){
         <div class="tcd"><b style="color:${days<=7?'var(--rd)':days<=14?'var(--ye)':'var(--ac)'}">${days===0?'today':days}</b><span>${days===0?'':'days'}</span></div>
         <div style="flex:1"><div style="font-size:14px;font-weight:650">${esc(t.name)}</div>
           <div style="font-size:11.5px;color:var(--mu)">${esc(t.date)} · ${t.type==='match'?'Match play':'Stroke play'}${t.venue?' · '+esc(t.venue):''}</div></div>
-      </div>${preLine}</div>`;
+      </div>${preLine}${soon.length ? `
+      <div style="margin-top:11px;padding-top:9px;border-top:1px solid var(--b1)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu);margin-bottom:5px">
+          Also this week</div>
+        ${soon.map(x => {
+          const dd = daysBetween(todayYmd(), x.date);
+          return `<div style="display:flex;justify-content:space-between;gap:9px;padding:4px 0;font-size:12.5px">
+            <span>${esc(x.name)}${x.venue?`<span style="color:var(--mu)"> · ${esc(x.venue)}</span>`:''}</span>
+            <b style="white-space:nowrap;color:${dd<=2?'var(--ac)':'var(--tx)'}">${dd===0?'today':dd===1?'tomorrow':'in '+dd+' days'}</b>
+          </div>`;
+        }).join('')}
+      </div>` : ''}</div>`;
   }
 
   /* — her note — */
