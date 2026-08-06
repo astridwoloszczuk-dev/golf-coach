@@ -1627,11 +1627,50 @@ function pickTick(id, v){
 }
 
 async function saveRoundRow(row){
-  if (editId !== null) await upd('golf_rounds','id=eq.'+editId, row);
-  else                 await ins('golf_rounds', row);
+  let saved;
+  if (editId !== null) saved = await upd('golf_rounds','id=eq.'+editId, row);
+  else                 saved = await ins('golf_rounds', row);
+  const id = editId !== null ? editId
+           : (Array.isArray(saved) && saved[0] ? saved[0].id : null);
   editId=null; roundMode='select';
   toast('Round saved');
+  if (row.comp && id) await notifyNewComp(id, row);
   renderRounds();
+}
+
+/* Wes hears that a competitive card exists. His request, 6 Aug — and note it is
+   deliberately NOT the result: he wants to know she has played and whether the
+   feelings are logged, so he can react the same evening rather than on Sunday.
+
+   ONCE PER ROUND, ledgered by `#N<id>` in the notifications table. That tag is
+   distinct from the `#R<id>` used by the "send to Wes" button, so the two do not
+   cancel each other out: this fires on the first save and says a round exists,
+   the button sends the finished analysis when she decides the card is done.
+
+   Fires on FIRST SAVE even mid-entry, which is correct here precisely because
+   the claim is "a round has been submitted" rather than "here is how it went" —
+   the objection that killed auto-firing the result does not apply to a fact
+   that is already true. */
+async function notifyNewComp(id, row){
+  try {
+    const seen = await selSoft('notifications',
+      'select=message&recipient=eq.' + encodeURIComponent(TEACHER_NAME));
+    if ((seen||[]).some(n => String(n.message||'').includes('#N' + id))) return;
+
+    let feelings = 'No pre-round feelings logged.';
+    const t = (await selSoft('tournaments', `select=id&date=eq.${row.date}`) || [])[0];
+    if (t){
+      const ci = await selSoft('check_ins', `select=phase,mood&tournament_id=eq.${t.id}`) || [];
+      const pre = ci.find(c => c.phase === 'pre'), post = ci.find(c => c.phase === 'post');
+      const w = c => ((MOODS.find(m => m.v === Number(c.mood))||{}).label || '?').toLowerCase();
+      if (pre && post)  feelings = `Went in ${w(pre)}, came out ${w(post)}.`;
+      else if (pre)     feelings = `Went in ${w(pre)}. No after-round feeling yet.`;
+      else if (post)    feelings = `Came out ${w(post)}. Nothing logged beforehand.`;
+    }
+    await notify(TEACHER_NAME,
+      `Astrid has submitted a competitive round: ${row.course || 'course not given'}, `
+      + `${fmtDay(parseYmd(row.date))}.\n\n${feelings}\n\nIt is in the app under Rounds. #N${id}`);
+  } catch(e){ console.warn('new-comp ping failed', e); }   // never block the save
 }
 async function saveSimpleRound(){
   const d=gv('sr_d');
@@ -2322,7 +2361,11 @@ function openCheckIn(tid){
   const t = TOURN.find(x => x.id === tid);
   if (!t) return;
   const pre = checkIn(tid,'pre'), post = checkIn(tid,'post');
-  const played = t.date < todayYmd();
+  // OPENS ON THE DAY, not the day after. It was `<`, which meant the "after"
+  // half only appeared once the date had passed — so she could not submit the
+  // card and the feelings in one sitting, which is exactly when she is sitting
+  // down to do it. A round played today is a round that has happened.
+  const played = t.date <= todayYmd();
   if (ME.role !== 'student') { openSheet(checkInReadOnly(t, pre, post)); return; }
   openSheet(`
     <div class="sheet-h"><b>${esc(t.name)}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
