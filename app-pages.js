@@ -183,16 +183,22 @@ const GOAL_METRICS = {
      hence amber. Around +9 or +10 there translates to an index near 4 or 5 and
      gets her there far faster, hence green.
 
-     Full cards only (17+): scaling a short round flatters it, and these are
-     meant to be the rounds that count. Last 8, so it reflects current form
-     rather than the whole season. */
+     COMPLETE CARDS ONLY, FOR THE FORMAT PLAYED — 9 holes or 17+, nothing in
+     between. Her three Wednesday-afternoon 9-hole stableford comps at Colony
+     were played DELIBERATELY to get counting cards in (there are very few
+     handicap-relevant events to enter), so throwing them away would discard
+     exactly the effort the goal is asking for. They scale honestly too: +12 per
+     18, which is "played well, not great" and matches the ~20 points she
+     returned. What gets excluded is the genuinely partial — an 8-hole card, or
+     an 18-hole competition with 15 holes entered — where the missing holes are
+     not a shorter format but a gap. Last 8, so it tracks current form. */
   counting_avg(R){
     const HOME_ADJ = /colony|himberg/i;
     const vals = [];
     for (const r of R){
       if (r.stats_excluded || !r.comp || r.matchplay) continue;
       const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
-      if (p.length < 17) continue;
+      if (!(p.length === 9 || p.length >= 17)) continue;   // complete for its format
       const per18 = p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * 18 / p.length;
       // normalise onto the "other courses" scale
       vals.push({d: r.date, v: per18 - (HOME_ADJ.test(r.course||'') ? 5 : 0)});
