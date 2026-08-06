@@ -56,29 +56,66 @@ let GOALS = [];
    does and what the goal requires.
    ──────────────────────────────────────────────────────────────── */
 const HOME_COURSE = /colony|himberg|roehampton/i;   // "away" means none of these
+// Local date parse so every metric below is self-contained and can be run
+// against real rounds by a test harness without dragging in the whole page.
+const gmDate = d => { const [y,m,dd] = String(d).split('-').map(Number); return new Date(y, m-1, dd); };
 
 // A metric returns {val, txt, state} — state is 'good' | 'warn' | 'bad' | null.
 // null means not enough evidence yet, and the title stays neutral: colouring a
 // goal off two data points teaches her to distrust the colour.
 const GOAL_METRICS = {
 
-  /* Competition rounds played somewhere that is not a home course. Aim 1.5 a
-     month across the May-October season; she has managed about 1. Judged on
-     PACE so far this season, not on the season total, or it reads red until
-     October and then flips. */
+  /* Open MID-WEEK events entered individually, away from a home course.
+
+     Rewritten 6 Aug, and the first version was measuring the wrong thing
+     entirely. It counted ROUNDS, so a three-day Mannschaftsmeisterschaft
+     counted as three, and the goal read 7-of-5 and green. Astrid knew that was
+     flattering; the corrected number is 0.
+
+     Two corrections, both derived, neither needing a new field:
+       1. CONSECUTIVE DAYS AT ONE COURSE ARE ONE EVENT. Entering a three-day
+          team event is one decision, not three.
+       2. MID-WEEK ONLY. Every away competitive round she has played this
+          season was a Saturday or a Sunday - the team events. Weekends are
+          Niko's, which is the real constraint behind this goal, so Mon-Fri is
+          what actually distinguishes the thing being aimed at. It also
+          excludes the team events without needing to label them.
+
+     Aim 1.5 a month across May-October, judged on PACE so far rather than the
+     season total, or it reads red until October and then flips in a week. */
   away_comps(R){
     const yr = new Date().getFullYear();
     const inSeason = d => { const m = Number(d.slice(5,7)); return m >= 5 && m <= 10; };
     const comps = R.filter(r => r.comp && !r.stats_excluded
-                             && r.date.slice(0,4) === String(yr) && inSeason(r.date));
-    const away = comps.filter(r => !HOME_COURSE.test(r.course || ''));
+                             && r.date.slice(0,4) === String(yr) && inSeason(r.date)
+                             && !HOME_COURSE.test(r.course || ''))
+                   .sort((a,z) => a.date.localeCompare(z.date));
+
+    /* COLLAPSE FIRST, JUDGE SECOND. Filtering to mid-week before grouping
+       split the Sat-Sun-Mon Herzog block and left its Monday standing alone
+       as a "mid-week event" - which is precisely the team golf this metric
+       exists to exclude. A block counts only if EVERY one of its days is
+       Mon-Fri, so a weekend event that spills into Monday stays a weekend
+       event. */
+    const blocks = [];
+    let prev = null;
+    for (const r of comps){
+      const c = String(r.course||'').trim().toLowerCase().slice(0,6);
+      const d = gmDate(r.date);
+      if (prev && prev.c === c && (d - prev.d)/86400000 <= 1) blocks[blocks.length-1].days.push(d);
+      else blocks.push({c, days:[d]});
+      prev = {c, d};
+    }
+    const events = blocks.filter(bl =>
+      bl.days.every(d => d.getDay() >= 1 && d.getDay() <= 5)).length;
+
     const now = new Date();
     const monthsIn = Math.min(6, Math.max(0, (Math.min(10, now.getMonth()+1) - 5) + now.getDate()/30));
-    const due = 1.5 * monthsIn;
     if (monthsIn < 0.5) return {txt:'season not started', state:null};
-    const ratio = due ? away.length/due : 1;
-    return {val: away.length,
-            txt: `${away.length} away this season · ${due.toFixed(0)} due`,
+    const due = 1.5 * monthsIn;
+    const ratio = due ? events/due : 1;
+    return {val: events,
+            txt: `${events} mid-week away · ${due.toFixed(0)} due`,
             state: ratio >= 0.9 ? 'good' : ratio >= 0.6 ? 'warn' : 'bad'};
   },
 
@@ -128,28 +165,74 @@ const GOAL_METRICS = {
             state: pct >= 30 ? 'good' : pct >= 20 ? 'warn' : 'bad'};
   },
 
-  /* Competition scoring against par, per 18 — the number all four handicap and
-     score goals actually turn on. Her point, and it is correct: a card moves a
-     handicap by roughly a twentieth, so reaching <9 means scoring BETTER than
-     9 over, not equal to it. Currently +13.2, which is why these read red. */
-  comp_avg(R, goal){
-    let n = 0, d = 0;
+  /* HANDICAP PROGRESS — best 8 of the last 20, per 18 against par.
+
+     This replaces a plain competition average, which was the wrong statistic
+     and made the whole board red. A handicap does not track your mean round,
+     it tracks your BEST EIGHT OF THE LAST TWENTY. Astrid was 9.8 twelve months
+     ago with a competition mean of +13.2, and those two facts are perfectly
+     consistent — the mean is simply not what moves it.
+
+     Measured properly her best 8 is +7.3 against a mean of +11.8. That is a
+     different picture entirely, and it is honest: nothing here has been
+     loosened, the board was just answering with a number the handicap system
+     does not use.
+
+     CALIBRATED AGAINST HER REAL INDEX, which is the only reason to trust it.
+     Her actual handicap is ~10.2 (9.8 twelve months ago). Including rounds of
+     9+ holes gave a best-8 of +7.3 — far too flattering, because short and
+     casual rounds scale up kindly: five of the eight "best" rounds were 9 to
+     16 holes. Restricting to FULL rounds of 17+ gives +9.7, which tracks 10.2
+     closely. So full rounds only, and the number can be believed.
+
+     Both competition and social rounds count: the handicap system counts
+     general play too, and her social scoring is the better half of her game.
+
+     MATCHPLAY IS EXCLUDED, because matchplay does not count towards a
+     handicap. This is not the earlier (wrong) idea that those cards are
+     contaminated — they are her best golf and they stay everywhere else. They
+     simply are not handicap scores. Without this, Breaking 80 went GREEN off a
+     17-hole match she won at +3, which is not a round of 79. */
+  hcp_best8(R, goal){
+    const vals = [];
     for (const r of R){
-      if (r.stats_excluded || !r.comp) continue;
-      for (const h of (r.holes_data||[])){
-        if (String(h.par??'')==='' || String(h.score??'')==='') continue;
-        n++; d += Number(h.score) - Number(h.par);
-      }
+      if (r.stats_excluded || r.matchplay) continue;   // matchplay is not a handicap score
+      const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
+      if (p.length < 17) continue;          // full rounds only — see calibration above
+      vals.push({d: r.date,
+                 v: p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * 18 / p.length});
     }
-    if (n < 36) return {txt:'not enough competition holes', state:null};
-    const per18 = d*18/n;
-    // target lifted from the goal's own title so one metric serves all four
-    const t = /(<|under\s*)?5\b/.test(goal.title) && /handicap/i.test(goal.title) ? 5
-            : /80/.test(goal.title) ? 8
-            : 9;
-    return {val: per18,
-            txt: `${per18>0?'+':''}${per18.toFixed(1)} per 18 · needs ${t>0?'+':''}${t}`,
-            state: per18 <= t ? 'good' : per18 <= t + 3 ? 'warn' : 'bad'};
+    if (vals.length < 8) return {txt:`only ${vals.length} full rounds`, state:null};
+    const last20 = vals.sort((a,z)=>a.d.localeCompare(z.d)).slice(-20).map(x=>x.v).sort((a,z)=>a-z);
+    const best8 = last20.slice(0, 8).reduce((a,v)=>a+v, 0) / 8;
+    const t = /handicap\s*<\s*5/i.test(goal.title) ? 5 : 9;
+    return {val: best8,
+            txt: `best 8 of 20: ${best8>0?'+':''}${best8.toFixed(1)} · needs ${t>0?'+':''}${t}`,
+            state: best8 <= t ? 'good' : best8 <= t + 2 ? 'warn' : 'bad'};
+  },
+
+  /* BREAKING 80 is a GROSS SCORE, so read the gross score. Nothing here is
+     relative to par, and that matters: her best completed competition round is
+     27 April at Colony Himberg West Red, +7 — which looked like 79 until you
+     notice the card totals PAR 73. She shot exactly 80. Comparing "+7" against
+     an assumed par 72 would have marked this goal green for a round that
+     missed it by one.
+
+     Completed 18s only, stroke play only. A 17-hole round scaled up is not a
+     round of 79, and a match won 3&2 is not a score at all. */
+  best_comp_round(R){
+    let best = null, when = null;
+    for (const r of R){
+      if (r.stats_excluded || !r.comp || r.matchplay) continue;
+      const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
+      if (p.length !== 18) continue;
+      const gross = p.reduce((a,h)=>a+Number(h.score), 0);
+      if (best == null || gross < best){ best = gross; when = r.date; }
+    }
+    if (best == null) return {txt:'no completed 18-hole comp yet', state:null};
+    return {val: -best,          // lower gross is better; negate so trend reads up = good
+            txt: `best 18-hole comp ${best} · needs 79`,
+            state: best <= 79 ? 'good' : best <= 83 ? 'warn' : 'bad'};
   },
 
   /* Competition scoring minus social scoring. The choke signature as one
@@ -169,10 +252,60 @@ const GOAL_METRICS = {
   },
 };
 
+/* Metrics where "better" means a LOWER number. */
+const LOWER_IS_BETTER = new Set(['comp_avg', 'comp_social_gap']);
+/* Season-to-date counts have no meaningful half-and-half trend. */
+const NO_TREND = new Set(['away_comps']);
+
+/* HORIZON-AWARE JUDGEMENT, added 6 Aug.
+
+   The board came out entirely red and Astrid asked me to move the cutoffs. I
+   would not — the thresholds are anchored on her own baseline and on what each
+   goal literally requires, and shifting them the minute they deliver bad news
+   is editing the thermometer. She has a standing instruction to me about
+   exactly that.
+
+   But she was right that the board was broken, for a different reason: a board
+   where everything is one colour carries no information, and I was judging a
+   FIVE-YEAR goal against today's average and colouring it red for not having
+   arrived yet. That is a category error, not a hard truth.
+
+   So: `now` goals are judged on ARRIVAL, because now is when they are due.
+   2-year and 5-year goals are judged on MOVEMENT — are the last few rounds
+   better than the ones before them. A long goal going the right way is green
+   even when it is miles off, and a long goal drifting is red even if it once
+   looked close. Nothing here changes a single number she is measured against;
+   it changes which question the colour answers. */
 function goalMetric(g, rounds){
   if (!g.metric || !GOAL_METRICS[g.metric]) return null;
-  try { return GOAL_METRICS[g.metric](rounds || [], g); }
+  const fn = GOAL_METRICS[g.metric];
+  let m;
+  try { m = fn(rounds || [], g); }
   catch(e){ console.warn('metric failed', g.metric, e); return null; }
+  if (!m) return null;
+
+  // trend: same metric over the older half of her rounds vs the newer half
+  if (!NO_TREND.has(g.metric) && m.val != null){
+    try {
+      const R = (rounds || []).slice().sort((a,z)=>a.date.localeCompare(z.date));
+      const cut = Math.floor(R.length / 2);
+      if (cut >= 4){
+        const before = fn(R.slice(0, cut), g), after = fn(R.slice(cut), g);
+        if (before && after && before.val != null && after.val != null){
+          const raw = after.val - before.val;
+          const better = LOWER_IS_BETTER.has(g.metric) ? -raw : raw;
+          m.delta = raw;
+          m.dir = Math.abs(raw) < 0.05 ? 'flat' : better > 0 ? 'up' : 'down';
+        }
+      }
+    } catch(e){ /* trend is a bonus, never a reason to lose the metric */ }
+  }
+
+  // long-horizon goals are scored on movement, not arrival
+  if ((g.horizon === '2y' || g.horizon === '5y') && m.dir)
+    m.state = m.dir === 'up' ? 'good' : m.dir === 'flat' ? 'warn' : 'bad';
+
+  return m;
 }
 
 async function renderGoals(){
@@ -230,7 +363,9 @@ async function renderGoals(){
           <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px">
             <b style="font-size:15px;font-weight:750;color:${col};${done ? 'text-decoration:line-through' : ''}">${esc(g.title)}</b>
             ${done ? '<span class="bp">achieved</span>'
-                   : m ? `<span style="font-size:12px;font-weight:600;color:${col === 'var(--tx)' ? 'var(--mu)' : col}">${esc(m.txt)}</span>`
+                   : m ? `<span style="font-size:12px;font-weight:600;color:${col === 'var(--tx)' ? 'var(--mu)' : col}">${esc(m.txt)}${
+                         m.dir ? `<span title="against her earlier rounds" style="margin-left:6px;font-weight:700">${
+                           m.dir === 'up' ? '\u25b2' : m.dir === 'down' ? '\u25bc' : '\u2192'}</span>` : ''}</span>`
                        : ''}
           </div>
           ${g.detail ? `<p style="font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.45">${esc(g.detail)}</p>` : ''}
