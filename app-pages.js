@@ -2608,6 +2608,44 @@ function gapTableHtml(all){
     <div style="font-size:10.5px;color:var(--mu);margin-top:8px">Everything per 18 holes so part-rounds compare honestly. Excluded rounds left out. Red means competition is the worse of the two.</div>`;
 }
 
+/* ── Breathwork, and nothing else ────────────────────────────────
+   Wes asked for meditation / breathwork, 6 Aug. She already tracks it —
+   it is the `breath` row in the habit app — and she does not want to
+   hand him the habit app, which also holds alcohol, protein, water,
+   supplements and her wind-down mood.
+
+   So this reads a SECURITY DEFINER function that returns one field for
+   one week and cannot be asked for anything else. Not a read grant on
+   daily_habits with a promise that the UI will only render one column:
+   the UI is not the security boundary, and a teacher token pointed at
+   the REST API would return the lot.
+
+   Rendered as seven day pills — a mirror of the row she actually fills
+   in — plus the count, which is the number he will actually read.
+   ──────────────────────────────────────────────────────────────── */
+async function mindWeekHtml(wk){
+  let rows;
+  try {
+    rows = await api('rpc/mind_week_guarded', {method:'POST', body:{wk}});
+  } catch(e){ return ''; }              // migration not run yet: show nothing
+  if (!Array.isArray(rows) || !rows.length) return '';
+  const done = rows.filter(r => r.done).length;
+  const today = todayYmd();
+  return `<div class="card"><div class="ct"><span>Breathwork</span>
+      <span class="bg ${done>=5?'bg-good':done>=3?'bg-warn':'bg-bad'}">${done}/7</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${rows.map(r => {
+        const d = parseYmd(r.d), future = r.d > today;
+        return `<div style="flex:1;min-width:34px;text-align:center;padding:7px 2px;border-radius:8px;
+            border:1px solid ${r.done?'var(--pu)':'var(--b1)'};
+            background:${r.done?'rgba(192,132,252,.22)':'transparent'};opacity:${future?.4:1}">
+          <div style="font-size:13px;font-weight:700;color:${r.done?'var(--pu)':'var(--b1)'}">${r.done?'●':'·'}</div>
+          <div style="font-size:9px;color:var(--mu);margin-top:2px">${DAY_SHORT[(d.getDay()+6)%7]}</div>
+        </div>`;
+      }).join('')}
+    </div></div>`;
+}
+
 async function renderSummary(){
   const wk = ymd(WEEK), wkEnd = ymd(addDays(WEEK,6));
   const back4 = ymd(addDays(WEEK,-21));   // this week + 3 back, for the streak check
@@ -2762,6 +2800,7 @@ async function renderSummary(){
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
+  h += await mindWeekHtml(wk);
   h += countdownHtml(tourn||[]);
 
   /* — goals + next tournament — */
