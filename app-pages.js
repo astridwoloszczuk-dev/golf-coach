@@ -2444,18 +2444,6 @@ function sumDetail(items){
     </div>`).join('')}</div>`;
 }
 
-/* Claude's read of the week, written by James into `week_summaries`.
-   NOT the `feedback` table: that one is hidden from the teacher by RLS
-   because it is Claude talking to Astrid. This is Claude talking to
-   BOTH of them, so it needs somewhere Wes can actually read. */
-function claudeSummaryHtml(row, title){
-  if (!row || !row.body) return `<div class="card"><div class="ct">${esc(title)}</div>
-    <div class="empty">Not generated yet \u2014 it is written on Sunday.</div></div>`;
-  return `<div class="card" style="border-color:rgba(192,132,252,.3);background:rgba(192,132,252,.05)">
-    <div class="ct"><span style="color:var(--pu)">${esc(title)}</span>
-      ${row.generated_at?`<span style="font-size:10px;color:var(--mu)">${new Date(row.generated_at).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>`:''}</div>
-    <div style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(row.body)}</div></div>`;
-}
 
 
 /* ── The cumulative card, and the gap table ──────────────────────
@@ -2635,7 +2623,7 @@ async function renderSummary(){
   const back4 = ymd(addDays(WEEK,-21));   // this week + 3 back, for the streak check
 
   const fortnight = ymd(addDays(parseYmd(todayYmd()),14));
-  const [asg, subs, rounds, goals, tourn, note, wsum, refl] = await Promise.all([
+  const [asg, subs, rounds, goals, tourn, note, refl] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category)&week_start=gte.${back4}&week_start=lte.${wk}&order=week_start.asc`),
     sel('week_submissions', `select=submitted_at,snapshot&week_start=eq.${wk}&order=submitted_at.asc`),
     // A YEAR of rounds, not a week: the gap table compares social with
@@ -2645,7 +2633,6 @@ async function renderSummary(){
     // his spec: the next one, plus everything else inside a fortnight
     sel('tournaments', `select=*&date=gte.${todayYmd()}&date=lte.${fortnight}&order=date.asc`),
     sel('weekly_notes', `select=note&week_start=eq.${wk}`),
-    selSoft('week_summaries', `select=*&week_start=eq.${wk}`),
     selSoft('week_reflections', `select=*&week_start=eq.${wk}`),
   ]);
 
@@ -2688,10 +2675,20 @@ async function renderSummary(){
         score:t.score, when:t.date, note:t.notes}))) : ''}
   </div>`;
 
-  // ONE briefing, not two. The pair overlapped badly — both narrated the
-  // rounds — and tournaments came out of it entirely because the countdown sits
-  // at the foot of this same page. Fewer words, no repetition.
-  h += claudeSummaryHtml((wsum||[]).find(x=>x.kind==='week'), 'Claude on the week');
+  /* CLAUDE'S BRIEFING REMOVED, 6 Aug. Her read, and it is right: every line of
+     it duplicated something already on this page. It explained the drill Wes
+     himself set, then reported she had not done it — which the wheel says
+     above; it narrated the rounds, which the rounds table does better; and it
+     quoted the scoring-position figure, which appears twice below.
+
+     The cause is accretion, not the model. The prose was written when this page
+     had nothing else on it. The wheel, the tiles, the cumulative card and the
+     gap table all arrived underneath it afterwards, and nobody asked whether
+     the paragraph still earned its place. It did not.
+
+     It comes back only if it can say something no table here can — where her
+     account and the evidence disagree, or where a trend crosses. Not a summary
+     of what is already visible. */
 
   // Her own words, clearly attributed and kept OUT of the computed summary:
   // evidence and testimony sit beside each other, never blended.
