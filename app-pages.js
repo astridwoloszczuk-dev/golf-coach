@@ -188,6 +188,17 @@ const GOAL_METRICS = {
      Both competition and social rounds count: the handicap system counts
      general play too, and her social scoring is the better half of her game.
 
+     ⚠ UNRESOLVED, 6 Aug — DO NOT TRUST THIS NUMBER YET. Calibration moved
+     when matchplay was excluded: +9.7 before (against her real 10.2), +14.1
+     after. Neither is right, because her actual index draws on scores this app
+     does not hold and on 9-hole rounds combined in pairs, which cannot be
+     reconstructed here. The proxy is over-fitted to whatever subset is in the
+     database that week.
+
+     THE HONEST FIX IS TO STOP GUESSING: her handicap is a known, published
+     number. One field she updates when it changes beats any reconstruction,
+     exactly, for one entry a month. Raised with her; her call.
+
      MATCHPLAY IS EXCLUDED, because matchplay does not count towards a
      handicap. This is not the earlier (wrong) idea that those cards are
      contaminated — they are her best golf and they stay everywhere else. They
