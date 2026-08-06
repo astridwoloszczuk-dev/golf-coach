@@ -1794,6 +1794,7 @@ const checkIn = (tid, phase) => CHECKINS.find(c => c.tournament_id === tid && c.
    before it is read.
    ──────────────────────────────────────────────────────────────── */
 let FINDS = [], findsTab = 'week';
+let TROUNDS = [];   // rounds, for deriving tournament results
 function setFindsTab(t){ findsTab = t; renderTournaments(); }
 
 async function dismissFind(id){
@@ -1961,14 +1962,17 @@ async function dismissOpen(id){
 }
 
 async function renderTournaments(){
-  [TOURN, CHECKINS, FINDS] = await Promise.all([
+  [TOURN, CHECKINS, FINDS, TROUNDS] = await Promise.all([
     sel('tournaments','select=*&order=date.desc'),
     selSoft('check_ins','select=*'),      // absent until migration 03 is run
     // absent until migration 12 + the daily pull; fails soft to an empty list
     selSoft('tournament_finds',
       `select=*&dismissed=is.false&date=gte.${todayYmd()}&order=date.asc`),
+    // her rounds, so a tournament can show what she actually shot rather than
+    // asking her to type the score a second time
+    selSoft('golf_rounds','select=date,course,comp,matchplay,holes_data,stats_excluded&order=date.asc'),
   ]);
-  TOURN = TOURN || []; CHECKINS = CHECKINS || []; FINDS = FINDS || [];
+  TOURN = TOURN || []; CHECKINS = CHECKINS || []; FINDS = FINDS || []; TROUNDS = TROUNDS || [];
   const today = todayYmd();
   let h = ME.role==='student'
     ? `<div class="rbtns" style="margin:0 0 12px"><button class="btn btnp" onclick="editTournament(null)">＋ Add tournament</button></div>` : '';
@@ -1997,6 +2001,66 @@ async function renderTournaments(){
   el('pg-tournaments').innerHTML = h;
 }
 
+/* ── What she actually shot ──────────────────────────────────────
+   The row showed a `score` she had to type by hand and never did, so
+   results were invisible on the page whose whole job is results. She has
+   already entered the round; asking for the number twice is how the
+   second copy ends up empty and wrong. So it is DERIVED from the card.
+
+   THREE CASES, and they are not the same kind of thing — her point:
+
+     MATCH      a clean result. 3&2 is exact and means nothing scaled;
+                there is no per-18 version of winning on the 16th. Shown
+                as typed, with won/lost, and never derived from a card.
+     FULL 18    the number she shot. Shown as-is.
+     UNDER 18   stroke play only, pro-rated to 18 — nine holes simply
+                doubled. Marked as scaled, because a figure stretched
+                from a partial card should say so rather than sit next
+                to a real one pretending to be the same thing.
+   ──────────────────────────────────────────────────────────────── */
+function tournamentResult(t){
+  // a match is whatever she typed — nothing here is derivable from a scorecard
+  if (t.type === 'match') return {kind:'match', text: t.score, won: t.won};
+
+  const r = (TROUNDS||[]).find(x => x.date === t.date && !x.stats_excluded);
+  if (r && r.matchplay) return {kind:'match', text: t.score, won: t.won};
+  if (!r) return nn(t.score) ? {kind:'typed', text: t.score} : null;
+
+  const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
+  if (!p.length) return nn(t.score) ? {kind:'typed', text: t.score} : null;
+
+  const k = 18 / p.length;                       // 9 holes -> x2
+  const full = p.length === 18;
+  return {
+    kind: full ? 'full' : 'prorated',
+    holes: p.length,
+    gross: Math.round(p.reduce((a,h)=>a+Number(h.score),0) * k),
+    delta: p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * k,
+  };
+}
+
+function tournamentResultHtml(t){
+  const R = tournamentResult(t);
+  if (!R) return '';
+  if (R.kind === 'match'){
+    if (!nn(R.text) && R.won == null) return '';
+    const col = R.won === true ? 'var(--gn)' : R.won === false ? 'var(--rd)' : 'var(--bl)';
+    return `<div class="tscore" style="color:${col}" title="Match play — an exact result, never scaled">
+      ${esc(R.text || (R.won ? 'won' : 'lost'))}
+      <div style="font-size:9px;font-weight:400;color:var(--bl)">match</div></div>`;
+  }
+  if (R.kind === 'typed')
+    return `<div class="tscore">${esc(R.text)}</div>`;
+
+  const col = R.delta <= 6 ? 'var(--gn)' : R.delta <= 12 ? 'var(--tx)' : 'var(--rd)';
+  const d = `${R.delta>0?'+':''}${R.kind==='prorated' ? R.delta.toFixed(1) : R.delta}`;
+  return `<div class="tscore" style="color:${col}${R.kind==='prorated'?';opacity:.82':''}"
+      title="${R.kind==='prorated' ? R.holes+' holes played, scaled to 18' : 'full 18 holes'}">
+    ${R.kind==='prorated'?'~':''}${R.gross}
+    <div style="font-size:9px;font-weight:400;color:${R.kind==='prorated'?'var(--ye)':'var(--mu)'}">
+      ${d}${R.kind==='prorated' ? ` · from ${R.holes}h` : ''}</div></div>`;
+}
+
 function tournamentRow(t, isFuture){
   const days = isFuture ? daysBetween(todayYmd(), t.date) : null;
   const col = days==null ? '' : (days<=7 ? 'var(--rd)' : days<=14 ? 'var(--ye)' : 'var(--ac)');
@@ -2007,13 +2071,13 @@ function tournamentRow(t, isFuture){
     <div style="flex:1;min-width:0">
       <div style="font-size:14px;font-weight:650">${esc(t.name)}</div>
       <div style="font-size:11.5px;color:var(--mu);margin-top:2px">
-        ${t.type==='match'?'Match play':'Stroke play'}${t.venue?' · '+esc(t.venue):''}${isFuture?' · '+esc(t.date):''}</div>
+        ${t.type==='match'?'Match play':t.type==='stableford'?'Stableford':'Stroke play'}${t.venue?' · '+esc(t.venue):''}${isFuture?' · '+esc(t.date):''}</div>
       ${t.notes?`<div style="font-size:12px;color:var(--mu);margin-top:3px;font-style:italic">${esc(t.notes)}</div>`:''}
     </div>
     <div class="mpair" onclick="event.stopPropagation();openCheckIn(${t.id})" title="Before / after">
       ${moodDot(checkIn(t.id,'pre'))}${moodDot(checkIn(t.id,'post'))}
     </div>
-    ${!isFuture&&nn(t.score)?`<div class="tscore">${esc(t.score)}</div>`:''}
+    ${isFuture ? '' : tournamentResultHtml(t)}
   </div>`;
 }
 
@@ -2023,11 +2087,20 @@ function editTournament(id){
     <div class="sheet-h"><b>${id?'Edit tournament':'New tournament'}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="g2"><div class="fr"><label>Date</label><input type="date" id="t-date" value="${esc(t.date)}"></div>
       <div class="fr"><label>Type</label><select id="t-type" onchange="tournScoreHint()">
-        <option value="stroke" ${t.type==='stroke'?'selected':''}>Stroke play</option>
-        <option value="match"  ${t.type==='match' ?'selected':''}>Match play</option></select></div></div>
+        <option value="stroke"     ${t.type==='stroke'    ?'selected':''}>Stroke play</option>
+        <option value="stableford" ${t.type==='stableford'?'selected':''}>Stableford</option>
+        <option value="match"      ${t.type==='match'     ?'selected':''}>Match play</option></select></div></div>
     <div class="fr"><label>Name</label><input type="text" id="t-name" value="${esc(t.name)}" placeholder="CCG Ladies Cup"></div>
     <div class="fr"><label>Venue</label><input type="text" id="t-venue" value="${esc(t.venue||'')}" placeholder="Colony Ost"></div>
     <div class="fr"><label id="t-score-lbl">Score</label><input type="text" id="t-score" value="${esc(t.score||'')}" placeholder="${t.type==='match'?'3&2':'89'}"></div>
+    <!-- won/lost only means anything for a match; "3&2" carries the margin but
+         not the outcome, and nothing can read which of you it belongs to -->
+    <div class="fr" id="t-won-wrap" style="${t.type==='match'?'':'display:none'}">
+      <label>Result</label>
+      <div style="display:flex;gap:7px">
+        <button type="button" class="tgl ${t.won===true?'on':''}"  id="t-won-y" onclick="pickWon(1)">Won</button>
+        <button type="button" class="tgl ${t.won===false?'on':''}" id="t-won-n" onclick="pickWon(0)">Lost</button>
+      </div><input type="hidden" id="t-won" value="${t.won===true?'1':t.won===false?'0':''}"></div>
     <div class="fr"><label>Notes</label><textarea id="t-notes" rows="2">${esc(t.notes||'')}</textarea></div>
     <div class="rbtns"><button class="btn btnp" onclick="saveTournament(${id||'null'})">Save</button>
       ${id?`<button class="btn btnd" onclick="deleteTournament(${id})">Delete</button>`:''}
@@ -2035,15 +2108,27 @@ function editTournament(id){
   tournScoreHint();
 }
 function tournScoreHint(){
-  const isMatch = gv('t-type')==='match';
-  const l=el('t-score-lbl'), s=el('t-score');
-  if(l) l.textContent = isMatch ? 'Result (e.g. 3&2, or 2 down)' : 'Score (e.g. 89)';
-  if(s) s.placeholder = isMatch ? '3&2' : '89';
+  const ty = gv('t-type'), isMatch = ty==='match';
+  const l=el('t-score-lbl'), s=el('t-score'), w=el('t-won-wrap');
+  if(l) l.textContent = isMatch ? 'Result (e.g. 3&2, 1up)'
+                      : ty==='stableford' ? 'Points (e.g. 34)' : 'Score (e.g. 89)';
+  if(s) s.placeholder = isMatch ? '3&2' : ty==='stableford' ? '34' : '89';
+  if(w) w.style.display = isMatch ? '' : 'none';
+}
+function pickWon(v){
+  el('t-won').value = String(v);
+  el('t-won-y').classList.toggle('on', v===1);
+  el('t-won-n').classList.toggle('on', v===0);
 }
 async function saveTournament(id){
   const name=gv('t-name'), date=gv('t-date');
   if(!name||!date){ toast('Name and date, please'); return; }
-  const row={date, name, type:gv('t-type'), score:gv('t-score')||null, venue:gv('t-venue')||null, notes:gv('t-notes')||null};
+  // won is nullable and stays null for stroke/stableford: "lost" and "not a
+  // match" are different facts, so no defaulting to false
+  const isMatch = gv('t-type')==='match', w = gv('t-won');
+  const row={date, name, type:gv('t-type'), score:gv('t-score')||null,
+             won: isMatch ? (w===''?null:w==='1') : null,
+             venue:gv('t-venue')||null, notes:gv('t-notes')||null};
   if(id) await upd('tournaments','id=eq.'+id,row);
   else   await ins('tournaments',{...row, student_id:STUDENT_ID});
   closeSheet(); toast('Saved'); renderTournaments();
