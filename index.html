@@ -533,8 +533,17 @@ function authMsg(text, cls){
   const m = el('auth-msg'); m.className='msg'+(cls?' '+cls:''); m.innerHTML = text;
 }
 
+/* gmail.com and googlemail.com are the SAME mailbox to Google and two entirely
+   different strings to Supabase. Her allow-list holds googlemail; typing gmail
+   authenticates against an address with no profile, so she signs in cleanly and
+   the app has no idea who she is. Cost her an evening on 6 Aug, alongside an
+   autofilled outlook address doing the same thing. Normalise so the email path
+   is as forgiving as the token path already is. */
+const canonEmail = e => String(e||'').trim().toLowerCase()
+  .replace(/@gmail\.com$/, '@googlemail.com');
+
 async function sendLink(){
-  const email = gv('auth-email').toLowerCase();
+  const email = canonEmail(gv('auth-email'));
   if (!email || !email.includes('@')) { authMsg('That doesn\'t look like an email address.','err'); return; }
   el('auth-send').disabled = true;
   authMsg('<span class="spin"></span> Sending…');
@@ -591,7 +600,7 @@ async function verifyCode(){
   // silently breaks the OTP path, because `verify` checks email AND token
   // together. (The token-hash path carries its own identity, which is why that
   // one works when the code does not — exactly the split seen on 2026-07-31.)
-  const email = (gv('auth-email') || localStorage.getItem('gc_email') || '').toLowerCase();
+  const email = canonEmail(gv('auth-email') || localStorage.getItem('gc_email') || '');
   const parsed = parseAuthInput(el('auth-code').value);
   if (!parsed) {
     authMsg('That is neither the code nor the link. Paste the whole link, starting https://', 'err');
