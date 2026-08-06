@@ -40,8 +40,149 @@ function weekDays(){
    ═══════════════════════════════════════════════════════════════ */
 let GOALS = [];
 
+/* ── Goal metrics ────────────────────────────────────────────────
+   Her redesign, 6 Aug: she opens this page daily, so it has to say
+   something. The status dot is gone; the title itself carries the
+   colour, the live number sits beside it, the description goes small
+   underneath.
+
+   EVERY THRESHOLD BELOW IS ANCHORED ON HER OWN BASELINE, measured
+   6 Aug over 15 competition rounds (228 holes) and 16 social (187).
+   Inventing round numbers would have produced a page that is either
+   permanently green or permanently red, and either way ignorable.
+
+   Amber is "behind", red is "far behind". Nothing here is scored
+   against a field or a tour average — only against what she already
+   does and what the goal requires.
+   ──────────────────────────────────────────────────────────────── */
+const HOME_COURSE = /colony|himberg|roehampton/i;   // "away" means none of these
+
+// A metric returns {val, txt, state} — state is 'good' | 'warn' | 'bad' | null.
+// null means not enough evidence yet, and the title stays neutral: colouring a
+// goal off two data points teaches her to distrust the colour.
+const GOAL_METRICS = {
+
+  /* Competition rounds played somewhere that is not a home course. Aim 1.5 a
+     month across the May-October season; she has managed about 1. Judged on
+     PACE so far this season, not on the season total, or it reads red until
+     October and then flips. */
+  away_comps(R){
+    const yr = new Date().getFullYear();
+    const inSeason = d => { const m = Number(d.slice(5,7)); return m >= 5 && m <= 10; };
+    const comps = R.filter(r => r.comp && !r.stats_excluded
+                             && r.date.slice(0,4) === String(yr) && inSeason(r.date));
+    const away = comps.filter(r => !HOME_COURSE.test(r.course || ''));
+    const now = new Date();
+    const monthsIn = Math.min(6, Math.max(0, (Math.min(10, now.getMonth()+1) - 5) + now.getDate()/30));
+    const due = 1.5 * monthsIn;
+    if (monthsIn < 0.5) return {txt:'season not started', state:null};
+    const ratio = due ? away.length/due : 1;
+    return {val: away.length,
+            txt: `${away.length} away this season · ${due.toFixed(0)} due`,
+            state: ratio >= 0.9 ? 'good' : ratio >= 0.6 ? 'warn' : 'bad'};
+  },
+
+  /* Holes after a birdie held to bogey or better. Her signature, measured.
+     THRESHOLDS ARE DELIBERATELY NOT 95%: she makes about one birdie a round,
+     so a season is ~20 events and a single slip costs 5 points. 95% would mean
+     one lapse all year and would sit red on noise. 90/70 keeps it honest and
+     still demanding — she is on 75% in competition against 100% socially. */
+  post_birdie(R){
+    let tot = 0, ok = 0;
+    for (const r of R){
+      if (r.stats_excluded) continue;
+      const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
+      for (let i = 0; i < p.length-1; i++){
+        if (Number(p[i].score) < Number(p[i].par)){
+          tot++;
+          if (Number(p[i+1].score) - Number(p[i+1].par) <= 1) ok++;
+        }
+      }
+    }
+    if (tot < 5) return {txt:`${ok}/${tot} — too few birdies yet`, state:null};
+    const pct = Math.round(ok*100/tot);
+    return {val: pct, txt: `${pct}% held · ${ok}/${tot}`,
+            state: pct >= 90 ? 'good' : pct >= 70 ? 'warn' : 'bad'};
+  },
+
+  /* Scramble: up-and-downs as a share of greens missed. Exactly the number she
+     asked for — it combines the `c` marks with the saves actually made, since
+     scrambling well and collecting c's are the same axis. Competition 15%,
+     social 25%. Good amateurs run 30-40%, so 30 is the target and 20 the floor;
+     this is her single biggest scoring leak. */
+  scramble(R){
+    let missed = 0, ud = 0;
+    for (const r of R){
+      if (r.stats_excluded || !r.comp) continue;
+      for (const h of (r.holes_data||[])){
+        if (String(h.par??'')==='' || String(h.score??'')==='') continue;
+        if (h.gir) continue;
+        missed++;
+        const sh = String(h.short||'').toLowerCase();
+        if (['ud','u','✓'].includes(sh) || Number(h.score) <= Number(h.par)) ud++;
+      }
+    }
+    if (missed < 20) return {txt:'not enough competition holes', state:null};
+    const pct = Math.round(ud*100/missed);
+    return {val: pct, txt: `${pct}% scrambled · ${ud}/${missed}`,
+            state: pct >= 30 ? 'good' : pct >= 20 ? 'warn' : 'bad'};
+  },
+
+  /* Competition scoring against par, per 18 — the number all four handicap and
+     score goals actually turn on. Her point, and it is correct: a card moves a
+     handicap by roughly a twentieth, so reaching <9 means scoring BETTER than
+     9 over, not equal to it. Currently +13.2, which is why these read red. */
+  comp_avg(R, goal){
+    let n = 0, d = 0;
+    for (const r of R){
+      if (r.stats_excluded || !r.comp) continue;
+      for (const h of (r.holes_data||[])){
+        if (String(h.par??'')==='' || String(h.score??'')==='') continue;
+        n++; d += Number(h.score) - Number(h.par);
+      }
+    }
+    if (n < 36) return {txt:'not enough competition holes', state:null};
+    const per18 = d*18/n;
+    // target lifted from the goal's own title so one metric serves all four
+    const t = /(<|under\s*)?5\b/.test(goal.title) && /handicap/i.test(goal.title) ? 5
+            : /80/.test(goal.title) ? 8
+            : 9;
+    return {val: per18,
+            txt: `${per18>0?'+':''}${per18.toFixed(1)} per 18 · needs ${t>0?'+':''}${t}`,
+            state: per18 <= t ? 'good' : per18 <= t + 3 ? 'warn' : 'bad'};
+  },
+
+  /* Competition scoring minus social scoring. The choke signature as one
+     number, and closing it is the two-year goal. Currently 3.8 shots. */
+  comp_social_gap(R){
+    const agg = f => { let n=0,d=0;
+      for (const r of R){ if (r.stats_excluded || !f(r)) continue;
+        for (const h of (r.holes_data||[])){
+          if (String(h.par??'')==='' || String(h.score??'')==='') continue;
+          n++; d += Number(h.score) - Number(h.par); } }
+      return n >= 36 ? d*18/n : null; };
+    const c = agg(r=>r.comp), so = agg(r=>!r.comp);
+    if (c == null || so == null) return {txt:'need more of both', state:null};
+    const gap = c - so;
+    return {val: gap, txt: `${gap>0?'+':''}${gap.toFixed(1)} shots worse under a card`,
+            state: gap <= 2 ? 'good' : gap <= 4 ? 'warn' : 'bad'};
+  },
+};
+
+function goalMetric(g, rounds){
+  if (!g.metric || !GOAL_METRICS[g.metric]) return null;
+  try { return GOAL_METRICS[g.metric](rounds || [], g); }
+  catch(e){ console.warn('metric failed', g.metric, e); return null; }
+}
+
 async function renderGoals(){
-  GOALS = await sel('goals', 'select=*&order=horizon.asc,sort.asc,id.asc') || [];
+  // rounds come along now: every metric on this page is computed from them
+  let gRounds;
+  [GOALS, gRounds] = await Promise.all([
+    sel('goals', 'select=*&order=horizon.asc,sort.asc,id.asc'),
+    selSoft('golf_rounds', 'select=date,course,comp,stats_excluded,holes_data&order=date.asc'),
+  ]);
+  GOALS = GOALS || []; gRounds = gRounds || [];
   const canEdit = ME.role === 'teacher' || GOALS_STUDENT_WRITABLE;
   // The spec puts the status light in the teacher's hands — it is a judgement
   // about the coaching relationship, not a computed metric. But until Wes
@@ -59,14 +200,41 @@ async function renderGoals(){
     h += `<div class="card tinted" style="background:rgba(${hz.hue},${hz.a})">
       <div class="sect"><span>${hz.label}<span class="bar" style="background:rgba(${hz.hue},.85)"></span></span>${canEdit ? `<button class="btn btns" onclick="editGoal(null,'${hz.id}')">＋ Add</button>` : ''}</div>`;
     if (!list.length) h += `<div class="empty">Nothing set for this horizon yet.</div>`;
-    for (const g of list){
+    /* HER ORDER, 6 Aug: process goals first, handicap goals after, achieved
+       ones greyed at the foot of the process block. Something she is DOING
+       outranks a number she is waiting on, and a goal already met should stay
+       visible without taking the top of the page. */
+    const rank = g => (g.status === 'achieved' ? 1 : 0) + (g.kind === 'outcome' ? 2 : 0);
+    const ordered = list.slice().sort((a, z) =>
+      rank(a) - rank(z) || (a.sort ?? 0) - (z.sort ?? 0) || a.id - z.id);
+
+    for (const g of ordered){
       if (g.proposed){ h += proposedGoalHtml(g); continue; }
-      h += `<div class="goal">
-        <div class="light ${g.status}" title="${esc(statusLabel(g.status))}"></div>
+      const m = goalMetric(g, gRounds);
+      const done = g.status === 'achieved';
+      /* The TITLE carries the colour now — the dot is gone. Colour comes from
+         the live metric where there is one, and only falls back to the status
+         light where there isn't, so the page cannot claim a goal is on track
+         while its own number says otherwise. No metric and no evidence = plain
+         text, never a guess. */
+      const col = done ? 'var(--gn)'
+        : m && m.state === 'good' ? 'var(--gn)'
+        : m && m.state === 'warn' ? 'var(--ye)'
+        : m && m.state === 'bad'  ? 'var(--rd)'
+        : m ? 'var(--tx)'
+        : g.status === 'at_risk' ? 'var(--ye)'
+        : g.status === 'stalled' ? 'var(--rd)'
+        : 'var(--tx)';
+      h += `<div class="goal" style="${done ? 'opacity:.55' : ''}">
         <div class="gt">
-          <b>${esc(g.title)}</b>
-          ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}
-          ${canLight ? statusPickHtml(g) : `<p style="color:var(--mu);font-size:11px;margin-top:5px;text-transform:uppercase;letter-spacing:.8px">${esc(statusLabel(g.status))}</p>`}
+          <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px">
+            <b style="font-size:15px;font-weight:750;color:${col};${done ? 'text-decoration:line-through' : ''}">${esc(g.title)}</b>
+            ${done ? '<span class="bp">achieved</span>'
+                   : m ? `<span style="font-size:12px;font-weight:600;color:${col === 'var(--tx)' ? 'var(--mu)' : col}">${esc(m.txt)}</span>`
+                       : ''}
+          </div>
+          ${g.detail ? `<p style="font-size:11.5px;color:var(--mu);margin-top:3px;line-height:1.45">${esc(g.detail)}</p>` : ''}
+          ${canLight && !done ? statusPickHtml(g) : ''}
           ${suggestionHtml(g)}
         </div>
         ${canEdit ? `<button class="btn btns" onclick="editGoal(${g.id},'${g.horizon}')">✎</button>` : ''}
