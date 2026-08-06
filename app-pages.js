@@ -1434,7 +1434,7 @@ function holeBoxHtml(i){
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
       <div class="hole-nf"><span class="hole-lbl">Putts</span><input type="number" id="hputts_${i}" min="0" max="9" placeholder="—" class="hole-num"></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Trbl</span><input type="text" id="htrbl_${i}" maxlength="2" placeholder="—" class="hole-num" style="text-transform:uppercase;text-align:center" title="W water · O OB · U unplayable · FB/GB bunker"></div>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">Match</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · = halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">Match</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · . halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Not cmtd</span><input type="number" min="0" max="9" id="hcmt_${i}" placeholder="—" class="hole-num" style="text-align:center" title="How many shots on this hole you were NOT fully committed to — the dots off the paper card. Blank = all committed."></div>
     </div></div>`;
 }
@@ -1630,7 +1630,9 @@ async function saveCardRound(){
     putts: el('hputts_'+i)&&el('hputts_'+i).value!=='' ? Number(el('hputts_'+i).value) : null,
     trbl:  el('htrbl_'+i)?el('htrbl_'+i).value.trim().toUpperCase():'',
     cmt:   el('hcmt_'+i)&&el('hcmt_'+i).value!=='' ? Number(el('hcmt_'+i).value) : null,
-    mp:    el('hmp_'+i)?el('hmp_'+i).value.trim().replace('½','=') : '',
+    // she writes a DOT for a halved hole - less to write than ½ and impossible
+    // to confuse with anything else on a card. Accept the variants, store one.
+    mp:    el('hmp_'+i)? el('hmp_'+i).value.trim().replace(/^[.½0]$/,'=') : '',
   }));
   const tk=takeawayRow('rf');
   if(!tk){ toast('Both the theme and the one shot are needed'); return; }
@@ -2053,7 +2055,8 @@ async function renderTournaments(){
         A bonus, never the justification.
    ──────────────────────────────────────────────────────────────── */
 function matchResult(holes){
-  const marks = (holes||[]).map(h => String(h.mp||'').trim());
+  // a halved hole may arrive as . ½ 0 or = depending on when it was written
+  const marks = (holes||[]).map(h => String(h.mp||'').trim().replace(/^[.½0]$/,'='));
   if (!marks.some(m => m === '+' || m === '-' || m === '=')) return null;
   let lead = 0;
   for (let i = 0; i < marks.length; i++){
