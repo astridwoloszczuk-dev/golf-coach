@@ -84,33 +84,29 @@ const GOAL_METRICS = {
      Aim 1.5 a month across May-October, judged on PACE so far rather than the
      season total, or it reads red until October and then flips in a week. */
   away_comps(R){
-    /* Away, STROKE FORMAT, any day. Corrected twice by her and this is the
-       final shape: mid-week was my invention and wrong — weekend events count
-       perfectly well, when she plays is irrelevant to the goal. What matters is
-       that it is away and it is medal or stableford, not matchplay. Her two
-       Fontana rounds are a ranking tournament and obviously count.
+    /* Away, STROKE FORMAT, any day, counted as ROUNDS.
 
-       Still counted as EVENTS, not rounds: consecutive days at one course are
-       one entry, because entering a two-day tournament is one decision. */
+       Three shapes before this one, and each correction removed something of
+       mine rather than adding anything. Mid-week was my invention: weekend
+       events count perfectly well, when she plays is irrelevant. And the
+       consecutive-day collapsing was a WORKAROUND for team events inflating
+       the count three-to-one — which the matchplay flag now solves at the
+       source, properly, so the workaround goes.
+
+       Her two Fontana days are a two-day medal ranking tournament and count as
+       two. St Pölten and Herzog were matchplay and count as none. That gives 2,
+       which is what she said it was before any of this was computed. */
     const yr = new Date().getFullYear();
     const inSeason = d => { const m = Number(d.slice(5,7)); return m >= 5 && m <= 10; };
-    const comps = R.filter(r => r.comp && !r.stats_excluded && !r.matchplay
-                             && r.date.slice(0,4) === String(yr) && inSeason(r.date)
-                             && !HOME_COURSE.test(r.course || ''))
-                   .sort((a,z) => a.date.localeCompare(z.date));
-    let events = 0, prev = null;
-    for (const r of comps){
-      const c = String(r.course||'').trim().toLowerCase().slice(0,6);
-      const d = gmDate(r.date);
-      if (!(prev && prev.c === c && (d - prev.d)/86400000 <= 1)) events++;
-      prev = {c, d};
-    }
+    const rounds = R.filter(r => r.comp && !r.stats_excluded && !r.matchplay
+                              && r.date.slice(0,4) === String(yr) && inSeason(r.date)
+                              && !HOME_COURSE.test(r.course || '')).length;
     const now = new Date();
     const monthsIn = Math.min(6, Math.max(0, (Math.min(10, now.getMonth()+1) - 5) + now.getDate()/30));
     if (monthsIn < 0.5) return {txt:'season not started', state:null};
     const due = 1.5 * monthsIn;
-    const ratio = due ? events/due : 1;
-    return {val: events, txt: `${events} away event${events===1?'':'s'} · ${due.toFixed(0)} due`,
+    const ratio = due ? rounds/due : 1;
+    return {val: rounds, txt: `${rounds} away round${rounds===1?'':'s'} · ${due.toFixed(0)} due`,
             state: ratio >= 0.9 ? 'good' : ratio >= 0.6 ? 'warn' : 'bad'};
   },
 
