@@ -2463,12 +2463,21 @@ function sumTile(k, label, done, total){
 // What is still open matters as much as what is done — he asked for both.
 function sumDetail(items){
   if (!items.length) return `<div class="empty" style="padding:8px 0">Nothing in here this week.</div>`;
+  /* The tiles are the way into the detail, so the detail must be worth opening.
+     A drill shows what it scored; a tournament shows its result rendered exactly
+     as the Tournaments page renders it, plus the two check-in colours - going in
+     and coming out - which is the entire point of Wes's scale and was missing. */
   return `<div style="margin-top:9px">${items.map(i=>`
-    <div style="padding:8px 0;border-bottom:1px solid var(--b1);font-size:13px;line-height:1.5">
-      ${i.done?'<span class="good">\u2713</span>':'<span class="bad">\u2717</span>'} ${esc(i.name)}
-      ${nn(i.score)?` <b style="color:var(--ac)">${esc(String(i.score))}</b>`:''}
-      ${i.when?`<span style="color:var(--mu);font-size:11.5px"> \u00b7 ${esc(i.when)}</span>`:''}
-      ${i.note?`<div style="font-size:11.5px;color:var(--mu);font-style:italic;margin:2px 0 0 15px">${esc(i.note)}</div>`:''}
+    <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--b1)">
+      <span style="flex-shrink:0">${i.done?'<span class="good">\u2713</span>':'<span class="bad">\u2717</span>'}</span>
+      <div style="flex:1;min-width:0;font-size:13px;line-height:1.5">
+        ${esc(i.name)}
+        ${nn(i.score)?` <b style="color:var(--ac)">${esc(String(i.score))}</b>`:''}
+        ${i.when?`<span style="color:var(--mu);font-size:11.5px"> \u00b7 ${esc(i.when)}</span>`:''}
+        ${i.dots?`<span style="margin-left:7px;display:inline-flex;gap:3px;vertical-align:middle">${i.dots}</span>`:''}
+        ${i.note?`<div style="font-size:11.5px;color:var(--mu);font-style:italic;margin-top:2px">${esc(i.note)}</div>`:''}
+      </div>
+      ${i.result || ''}
     </div>`).join('')}</div>`;
 }
 
@@ -2631,16 +2640,20 @@ async function mindWeekHtml(wk){
   if (!Array.isArray(rows) || !rows.length) return '';
   const done = rows.filter(r => r.done).length;
   const today = todayYmd();
-  return `<div class="card"><div class="ct"><span>Breathwork</span>
+  /* SEVEN COLUMNS, not flex-wrap. With flex the seventh pill overflowed the row,
+     wrapped to its own line, and flex:1 then stretched it the full width - a
+     Sunday-sized monster under a neat Mon-Sat row. A grid cannot do that. */
+  return `<div class="card" style="padding:11px 14px">
+    <div class="ct" style="margin-bottom:8px"><span>Breathwork</span>
       <span class="bg ${done>=5?'bg-good':done>=3?'bg-warn':'bg-bad'}">${done}/7</span></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
       ${rows.map(r => {
         const d = parseYmd(r.d), future = r.d > today;
-        return `<div style="flex:1;min-width:34px;text-align:center;padding:7px 2px;border-radius:8px;
+        return `<div style="text-align:center;padding:4px 0;border-radius:6px;
             border:1px solid ${r.done?'var(--pu)':'var(--b1)'};
-            background:${r.done?'rgba(192,132,252,.22)':'transparent'};opacity:${future?.4:1}">
-          <div style="font-size:13px;font-weight:700;color:${r.done?'var(--pu)':'var(--b1)'}">${r.done?'●':'·'}</div>
-          <div style="font-size:9px;color:var(--mu);margin-top:2px">${DAY_SHORT[(d.getDay()+6)%7]}</div>
+            background:${r.done?'rgba(192,132,252,.20)':'transparent'};opacity:${future?.35:1}">
+          <div style="font-size:11px;line-height:1.1;color:${r.done?'var(--pu)':'var(--b1)'}">${r.done?'●':'·'}</div>
+          <div style="font-size:8.5px;color:var(--mu);margin-top:1px">${DAY_SHORT[(d.getDay()+6)%7]}</div>
         </div>`;
       }).join('')}
     </div></div>`;
@@ -2703,9 +2716,14 @@ async function renderSummary(){
       </div></div>
     ${sumOpen==='dg' ? sumDetail(mapA(dg)) : ''}
     ${sumOpen==='ocp'? sumDetail(mapA(ocp)) : ''}
-    ${sumOpen==='t'  ? sumDetail(wkT.map(t=>({done:!!(t.score||'').trim(), name:t.name,
-        score:t.score, when:t.date, note:t.notes}))) : ''}
+    ${sumOpen==='t'  ? sumDetail(wkT.map(t => ({
+        done: !!tournamentResult(t), name: t.name, when: t.date, note: t.notes,
+        result: tournamentResultHtml(t),
+        dots: moodDot(CHECKINS.find(c=>c.tournament_id===t.id&&c.phase==='pre'))
+            + moodDot(CHECKINS.find(c=>c.tournament_id===t.id&&c.phase==='post'))
+      }))) : ''}
   </div>`;
+  h += await mindWeekHtml(wk);
 
   /* CLAUDE'S BRIEFING REMOVED, 6 Aug. Her read, and it is right: every line of
      it duplicated something already on this page. It explained the drill Wes
@@ -2813,7 +2831,6 @@ async function renderSummary(){
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
-  h += await mindWeekHtml(wk);
 
   /* — goals + next tournament — */
   // Only what needs attention: NOW goals that are at-risk or stalled. A wall of
