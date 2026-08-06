@@ -327,7 +327,7 @@ async function renderGoals(){
 
   let h = '';
   if (ME.role === 'student' && !GOALS_STUDENT_WRITABLE)
-    h += `<div class="hintbar">Goals are Wes's to edit now. Talk to him if one needs changing.</div>`;
+    // banner removed 6 Aug - she set this arrangement up herself
 
   for (const hz of HORIZONS){
     const list = GOALS.filter(g => g.horizon === hz.id);
@@ -2630,8 +2630,12 @@ async function renderSummary(){
     // competition, and one week of two rounds is not a comparison.
     sel('golf_rounds', `select=*&date=gte.${ymd(addDays(WEEK,-365))}&date=lte.${wkEnd}&order=date.asc`),
     sel('goals', 'select=*&order=horizon.asc,sort.asc'),
-    // his spec: the next one, plus everything else inside a fortnight
-    sel('tournaments', `select=*&date=gte.${todayYmd()}&date=lte.${fortnight}&order=date.asc`),
+    /* FROM THE START OF THE WEEK, not from today. Fetching only future
+       tournaments meant one PLAYED earlier in the week could never appear in
+       the week's Tournaments bucket — Tuesday's Ladies Stableford showed as
+       0/0 on the Thursday. The tile is about the week; "next tournament" does
+       its own filtering below. */
+    sel('tournaments', `select=*&date=gte.${wk}&date=lte.${fortnight}&order=date.asc`),
     sel('weekly_notes', `select=note&week_start=eq.${wk}`),
     selSoft('week_reflections', `select=*&week_start=eq.${wk}`),
   ]);
@@ -2796,7 +2800,7 @@ async function renderSummary(){
     h += `</div>`;
   }
 
-  if ((tourn||[]).length){
+  if ((tourn||[]).some(x => x.date >= todayYmd())){
     /* ONE tournament block, not two. "Coming up" and "Next tournament" listed
        the same events — the first as a countdown, the second with her check-in
        attached — which read as repetition rather than as two views.
@@ -2805,8 +2809,10 @@ async function renderSummary(){
        anything else inside SEVEN days. A fortnight was too long a horizon for a
        page about this week; a second event next Tuesday is context, one in
        eleven days is not. */
-    const t = tourn[0], days = daysBetween(todayYmd(), t.date);
-    const soon = (tourn||[]).slice(1).filter(x => daysBetween(todayYmd(), x.date) <= 7);
+    // forward-looking only, now that the fetch reaches back to Monday
+    const ahead = (tourn||[]).filter(x => x.date >= todayYmd());
+    const t = ahead[0], days = t ? daysBetween(todayYmd(), t.date) : null;
+    const soon = ahead.slice(1).filter(x => daysBetween(todayYmd(), x.date) <= 7);
     const ci = await selSoft('check_ins', `select=*&tournament_id=eq.${t.id}`);
     const pre = ci.find(c => c.phase === 'pre');
     const preLine = pre
