@@ -1023,7 +1023,7 @@ function roundDetailHtml(r){
       <thead><tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
         <th style="${cell};text-align:left">Hole</th><th style="${cell}">Par</th><th style="${cell}">Score</th>
         <th style="${cell}">GIR</th><th style="${cell}">Drive</th><th style="${cell}">App</th>
-        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Mt</th><th style="${cell}">Cmt</th>
+        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th><th style="${cell}">Cmt</th>
       </tr></thead><tbody>
       ${hd.map(h=>{
         const p=Number(h.par), s=Number(h.score);
@@ -1434,7 +1434,7 @@ function holeBoxHtml(i){
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
       <div class="hole-nf"><span class="hole-lbl">Putts</span><input type="number" id="hputts_${i}" min="0" max="9" placeholder="—" class="hole-num"></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Trbl</span><input type="text" id="htrbl_${i}" maxlength="2" placeholder="—" class="hole-num" style="text-transform:uppercase;text-align:center" title="W water · O OB · U unplayable · FB/GB bunker"></div>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">Match</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · . halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">MP</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · . halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Not cmtd</span><input type="number" min="0" max="9" id="hcmt_${i}" placeholder="—" class="hole-num" style="text-align:center" title="How many shots on this hole you were NOT fully committed to — the dots off the paper card. Blank = all committed."></div>
     </div></div>`;
 }
@@ -2536,7 +2536,7 @@ function cumScorecardHtml(rounds){
         <th style="${cell};text-align:left">Round</th><th style="${cell}">Hole</th>
         <th style="${cell}">Par</th><th style="${cell}">Score</th><th style="${cell}">GIR</th>
         <th style="${cell}">Drive</th><th style="${cell}">App</th><th style="${cell}">Short</th>
-        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Mt</th><th style="${cell}">Cmt</th></tr>
+        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th><th style="${cell}">Cmt</th></tr>
       </thead><tbody>
       ${holes.map((h, i) => {
         const d = Number(h.score) - Number(h.par);
