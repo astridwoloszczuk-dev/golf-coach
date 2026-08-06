@@ -1064,9 +1064,15 @@ async function loadCompSent(){
   }
 }
 
-async function sendRoundToWes(id){
+/* RE-SENDABLE, changed 6 Aug. It was once-per-round to stop an edit
+   double-sending — but the case she actually described is precisely the one
+   that needs a second send: card edited, feelings now logged, and she wants him
+   to look again. The ledger still greys the button so it is obvious it has gone
+   once, and a re-send asks first, so it stays deliberate rather than accidental. */
+async function sendRoundToWes(id, again){
   const r = ROUNDS.find(x=>x.id===id);
   if (!r) return;
+  if (again && !confirm('Send this round to ' + TEACHER_NAME + ' again?')) return;
   const s = getRoundStats(r);
   const when = r.date ? fmtDay(parseYmd(r.date)) : 'today';
   const bits = [];
@@ -1106,7 +1112,7 @@ async function sendRoundToWes(id){
 
   if (!await notify(TEACHER_NAME, msg)) { toast("Couldn't queue that — try again"); return; }
   COMP_SENT.add(id);
-  toast(`Sent to ${TEACHER_NAME}`);
+  toast(again ? `Sent again to ${TEACHER_NAME}` : `Sent to ${TEACHER_NAME}`);
   renderRounds();
 }
 
@@ -1408,7 +1414,8 @@ function historyHtml(){
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
           ${r.comp?'<span class="bi">Comp</span>':''}${r.practice?'<span class="bp">Practice</span>':''}
           ${ME.role==='student'&&r.comp?(COMP_SENT.has(r.id)
-            ? `<span class="bp" title="Already sent — a comp round only goes once">→ ${esc(TEACHER_NAME)} ✓</span>`
+            ? `<button class="btn btns" onclick="sendRoundToWes(${r.id},true)" style="opacity:.6"
+                 title="Already sent once. Send again if you have edited the card or added the feelings.">→ ${esc(TEACHER_NAME)} ✓</button>`
             : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→ ${esc(TEACHER_NAME)}</button>`):''}
           ${r.stats_excluded?'<span class="bp" title="Kept in history, left out of every statistic">not counted</span>':''}
           ${ME.role==='student'?`<button class="btn btns" onclick="toggleExcluded(${r.id})" title="${r.stats_excluded?'Count this round in the statistics':'Keep this round but leave it out of the statistics'}">${r.stats_excluded?'∅':'⌀'}</button>
