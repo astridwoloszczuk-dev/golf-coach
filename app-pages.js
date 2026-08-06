@@ -1078,8 +1078,29 @@ async function sendRoundToWes(id){
   if (s.db)             bits.push(`${s.db} double${s.db>1?'s':''}+`);
   if (s.pen)            bits.push(`${s.pen} penalt${s.pen>1?'ies':'y'}`);
 
+  /* THE FEELINGS GO IN TOO. The automatic ping when she saves a card carries
+     them, but that fires on the FIRST save — before she has usually logged the
+     after-round mood. By the time she presses this button the pair is normally
+     complete, so this is the message that can show the gap, which is the whole
+     point of Wes's scale: went in scared, came out go time. */
+  let feel = '';
+  try {
+    const t = (await selSoft('tournaments', `select=id&date=eq.${r.date}`) || [])[0];
+    if (t){
+      const ci = await selSoft('check_ins', `select=phase,mood,note&tournament_id=eq.${t.id}`) || [];
+      const pre = ci.find(c=>c.phase==='pre'), post = ci.find(c=>c.phase==='post');
+      const w = c => ((MOODS.find(m=>m.v===Number(c.mood))||{}).label || '?').toLowerCase();
+      if (pre && post) feel = `Went in ${w(pre)}, came out ${w(post)}.`;
+      else if (pre)    feel = `Went in ${w(pre)}. No after-round feeling logged.`;
+      else if (post)   feel = `Came out ${w(post)}. Nothing logged beforehand.`;
+      const note = (post && post.note) || (pre && pre.note) || '';
+      if (feel && note.trim()) feel += ` "${note.trim()}"`;
+    }
+  } catch(e){ /* feelings are a bonus here, never a reason to lose the send */ }
+
   const msg = `Astrid played a competition — ${r.course||'course not given'}, ${when}.\n\n`
     + (bits.length ? bits.join(' · ') + '\n\n' : '')
+    + (feel ? feel + '\n\n' : '')
     + (r.notes ? `Her note: "${r.notes}"\n\n` : '')
     + `Full card in the app under Rounds. ${roundTag(id)}`;
 
