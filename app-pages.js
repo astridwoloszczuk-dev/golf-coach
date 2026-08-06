@@ -165,61 +165,54 @@ const GOAL_METRICS = {
             state: pct >= 30 ? 'good' : pct >= 20 ? 'warn' : 'bad'};
   },
 
-  /* HANDICAP PROGRESS — best 8 of the last 20, per 18 against par.
+  /* COUNTING-ROUND SCORING — replaces a reconstructed handicap.
 
-     This replaces a plain competition average, which was the wrong statistic
-     and made the whole board red. A handicap does not track your mean round,
-     it tracks your BEST EIGHT OF THE LAST TWENTY. Astrid was 9.8 twelve months
-     ago with a competition mean of +13.2, and those two facts are perfectly
-     consistent — the mean is simply not what moves it.
+     Her instruction, 6 Aug: do not calculate the handicap. The app cannot —
+     her real index draws on scores this database does not hold and on 9-hole
+     rounds combined in pairs, and every attempt to rebuild it moved by four
+     shots depending on which subset was included. Her handicap is a published
+     number; guessing at it is worse than useless because it looks authoritative.
 
-     Measured properly her best 8 is +7.3 against a mean of +11.8. That is a
-     different picture entirely, and it is honest: nothing here has been
-     loosened, the board was just answering with a number the handicap system
-     does not use.
+     What the app CAN answer is the question the goal actually turns on: is she
+     playing at the level that would take her there. So this measures COUNTING
+     rounds only — competition, stroke format, not matchplay, not social — and
+     asks whether their scoring sits where it needs to.
 
-     CALIBRATED AGAINST HER REAL INDEX, which is the only reason to trust it.
-     Her actual handicap is ~10.2 (9.8 twelve months ago). Including rounds of
-     9+ holes gave a best-8 of +7.3 — far too flattering, because short and
-     casual rounds scale up kindly: five of the eight "best" rounds were 9 to
-     16 holes. Restricting to FULL rounds of 17+ gives +9.7, which tracks 10.2
-     closely. So full rounds only, and the number can be believed.
+     COURSE-ADJUSTED, her numbers. Colony and Himberg rate well above par, so
+     +10 there is the same golf as +5 somewhere easier; the boundaries move by
+     five strokes between the two. Rather than judge each round against its own
+     course, every round is normalised onto the "other courses" scale by taking
+     five off the Colony/Himberg ones, so a mixed set averages honestly:
 
-     Both competition and social rounds count: the handicap system counts
-     general play too, and her social scoring is the better half of her game.
+       Colony / Himberg      green ~+10   amber ~+15
+       everywhere else       green ~+5    amber ~+10
 
-     ⚠ UNRESOLVED, 6 Aug — DO NOT TRUST THIS NUMBER YET. Calibration moved
-     when matchplay was excluded: +9.7 before (against her real 10.2), +14.1
-     after. Neither is right, because her actual index draws on scores this app
-     does not hold and on 9-hole rounds combined in pairs, which cannot be
-     reconstructed here. The proxy is over-fitted to whatever subset is in the
-     database that week.
+     Her own reasoning for those levels: trending around +15 at Colony gets her
+     to a sub-9 index eventually — twenty rounds of it, realistically two years,
+     hence amber. Around +9 or +10 there translates to an index near 4 or 5 and
+     gets her there far faster, hence green.
 
-     THE HONEST FIX IS TO STOP GUESSING: her handicap is a known, published
-     number. One field she updates when it changes beats any reconstruction,
-     exactly, for one entry a month. Raised with her; her call.
-
-     MATCHPLAY IS EXCLUDED, because matchplay does not count towards a
-     handicap. This is not the earlier (wrong) idea that those cards are
-     contaminated — they are her best golf and they stay everywhere else. They
-     simply are not handicap scores. Without this, Breaking 80 went GREEN off a
-     17-hole match she won at +3, which is not a round of 79. */
-  hcp_best8(R, goal){
+     Full cards only (17+): scaling a short round flatters it, and these are
+     meant to be the rounds that count. Last 8, so it reflects current form
+     rather than the whole season. */
+  counting_avg(R){
+    const HOME_ADJ = /colony|himberg/i;
     const vals = [];
     for (const r of R){
-      if (r.stats_excluded || r.matchplay) continue;   // matchplay is not a handicap score
+      if (r.stats_excluded || !r.comp || r.matchplay) continue;
       const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
-      if (p.length < 17) continue;          // full rounds only — see calibration above
-      vals.push({d: r.date,
-                 v: p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * 18 / p.length});
+      if (p.length < 17) continue;
+      const per18 = p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * 18 / p.length;
+      // normalise onto the "other courses" scale
+      vals.push({d: r.date, v: per18 - (HOME_ADJ.test(r.course||'') ? 5 : 0)});
     }
-    if (vals.length < 8) return {txt:`only ${vals.length} full rounds`, state:null};
-    const last20 = vals.sort((a,z)=>a.d.localeCompare(z.d)).slice(-20).map(x=>x.v).sort((a,z)=>a-z);
-    const best8 = last20.slice(0, 8).reduce((a,v)=>a+v, 0) / 8;
-    const t = /handicap\s*<\s*5/i.test(goal.title) ? 5 : 9;
-    return {val: best8,
-            txt: `best 8 of 20: ${best8>0?'+':''}${best8.toFixed(1)} · needs ${t>0?'+':''}${t}`,
-            state: best8 <= t ? 'good' : best8 <= t + 2 ? 'warn' : 'bad'};
+    if (vals.length < 3)
+      return {txt:`only ${vals.length} counting round${vals.length===1?'':'s'}`, state:null};
+    const last = vals.sort((a,z)=>a.d.localeCompare(z.d)).slice(-8);
+    const avg = last.reduce((a,x)=>a+x.v, 0) / last.length;
+    return {val: avg,
+            txt: `counting rounds ${avg>0?'+':''}${avg.toFixed(1)} adj · needs +5`,
+            state: avg <= 5 ? 'good' : avg <= 10 ? 'warn' : 'bad'};
   },
 
   /* BREAKING 80 is a GROSS SCORE, so read the gross score. Nothing here is
@@ -264,7 +257,7 @@ const GOAL_METRICS = {
 };
 
 /* Metrics where "better" means a LOWER number. */
-const LOWER_IS_BETTER = new Set(['comp_avg', 'comp_social_gap']);
+const LOWER_IS_BETTER = new Set(['counting_avg', 'comp_social_gap', 'best_comp_round']);
 /* Season-to-date counts have no meaningful half-and-half trend. */
 const NO_TREND = new Set(['away_comps']);
 
