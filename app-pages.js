@@ -1093,22 +1093,50 @@ async function sendRoundToWes(id){
    an opened card, 5 Aug. Collapsed by default: he needs it until he has the
    shorthand, she never needs it, and neither should pay for it with a screen
    of small print above their rounds. */
-let legendOpen = false;
+let legendOpen = false, printOpen = false;
+const SCORECARD_URL = 'https://astridwoloszczuk-dev.github.io/goal-tracker/scorecard_print.html';
 function toggleLegend(){ legendOpen = !legendOpen; renderRounds(); }
+function togglePrint(){ printOpen = !printOpen; renderRounds(); }
 function roundsLegendHtml(){
-  return `<div class="card" style="padding:11px 14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleLegend()">
-      <span style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mu);font-weight:600">
-        How to read the card</span>
-      <span style="color:var(--mu);font-size:13px">${legendOpen?'▾':'▸'}</span>
-    </div>
-    ${legendOpen?`<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.65">
-      <b>Fault-only</b> — a blank cell means that part of the hole was fine, so only the misses are written down.<br>
-      <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant, 7i or shorter · X dead, any club<br>
-      <b>Short</b> C choked a makeable save (successful saves are derived, not ticked)<br>
-      <b>Trbl</b> W water · O OB · U unplayable — <i>these carry a penalty stroke</i> · FB/GB bunker, no stroke<br>
-      <b>GIR</b> green in regulation · <b>Putts</b> count
-    </div>`:''}</div>`;
+  /* Two tiles, not one. Reading the card and printing the card are different
+     errands — and the printable sheet lives in the OTHER repo, so without a
+     link here the only way to it was hunting for a file on the laptop, which
+     is no use standing in a pro shop with a phone.
+
+     Kept current with the paper card: MP and Cmt were both missing from this
+     legend after they were added to the card, which is exactly how a legend
+     becomes a liability. */
+  const row = (label, open, onclick, body) => `<div class="card" style="padding:11px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="${onclick}">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mu);font-weight:600">${label}</span>
+      <span style="color:var(--mu);font-size:13px">${open?'\u25be':'\u25b8'}</span>
+    </div>${open?body:''}</div>`;
+
+  return row('How to read the card', legendOpen, 'toggleLegend()',
+    `<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.65">
+      <b>Fault-only</b> \u2014 a blank cell means that part of the hole was fine, so only the misses get written down.<br>
+      <b>Drive</b> S advantage lost \u00b7 X green gone &nbsp;\u00b7&nbsp;
+      <b>App</b> M missed the quadrant (7i or shorter only) \u00b7 X dead, any club<br>
+      <b>Short</b> C choked a makeable save \u2014 successful saves are derived, not ticked<br>
+      <b>Trbl</b> W water \u00b7 O OB \u00b7 U unplayable <i>(these carry a penalty stroke)</i> \u00b7 FB/GB bunker, no stroke<br>
+      <b>MP</b> matchplay only: + won the hole \u00b7 \u2212 lost it \u00b7 . halved \u2014 a conceded hole gets a mark and <b>no score</b>, never a guess<br>
+      <b>Cmt</b> one dot per shot you were not fully committed to, marked after the shot<br>
+      <b>GIR</b> green in regulation \u00b7 <b>Putts</b> count
+    </div>`)
+  + row('Printable card', printOpen, 'togglePrint()',
+    `<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.6">
+      Four cards to an A4 sheet, front and back.
+      <div class="rbtns" style="margin-top:9px">
+        <a class="btn btnp btns" href="${SCORECARD_URL}" target="_blank" rel="noopener"
+           style="text-decoration:none">Open the print sheet</a>
+      </div>
+      <div style="margin-top:8px;font-size:11px">
+        On a phone: open it, then <b>Share \u2192 Print</b>, and from there
+        <b>Save to PDF</b> if you want to keep a copy. It is a live page rather
+        than a stored PDF, so it is always the current card \u2014 there is no
+        old copy to print by mistake.
+      </div>
+    </div>`);
 }
 
 async function renderRounds(){
