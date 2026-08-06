@@ -1017,7 +1017,7 @@ function roundDetailHtml(r){
       <thead><tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
         <th style="${cell};text-align:left">Hole</th><th style="${cell}">Par</th><th style="${cell}">Score</th>
         <th style="${cell}">GIR</th><th style="${cell}">Drive</th><th style="${cell}">App</th>
-        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Cmt</th>
+        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Mt</th><th style="${cell}">Cmt</th>
       </tr></thead><tbody>
       ${hd.map(h=>{
         const p=Number(h.par), s=Number(h.score);
@@ -1033,6 +1033,8 @@ function roundDetailHtml(r){
           <td style="${cell}">${mark(h.short)}</td>
           <td style="${cell};color:var(--mu)">${h.putts??'<span style="color:var(--b1)">·</span>'}</td>
           <td style="${cell}">${mark(h.trbl)}</td>
+          <td style="${cell};font-weight:700;color:${h.mp==='+'?'var(--gn)':h.mp==='-'?'var(--rd)':'var(--mu)'}">${
+            h.mp==='=' ? '\u00bd' : (h.mp || '<span style="color:var(--b1)">\u00b7</span>')}</td>
           <td style="${cell};color:${h.cmt?'var(--rd)':'var(--b1)'}">${h.cmt?'●'.repeat(Math.min(5,Number(h.cmt))):'·'}</td>
         </tr>`;
       }).join('')}
@@ -1426,6 +1428,7 @@ function holeBoxHtml(i){
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
       <div class="hole-nf"><span class="hole-lbl">Putts</span><input type="number" id="hputts_${i}" min="0" max="9" placeholder="—" class="hole-num"></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Trbl</span><input type="text" id="htrbl_${i}" maxlength="2" placeholder="—" class="hole-num" style="text-transform:uppercase;text-align:center" title="W water · O OB · U unplayable · FB/GB bunker"></div>
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">Match</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · = halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Not cmtd</span><input type="number" min="0" max="9" id="hcmt_${i}" placeholder="—" class="hole-num" style="text-align:center" title="How many shots on this hole you were NOT fully committed to — the dots off the paper card. Blank = all committed."></div>
     </div></div>`;
 }
@@ -1621,6 +1624,7 @@ async function saveCardRound(){
     putts: el('hputts_'+i)&&el('hputts_'+i).value!=='' ? Number(el('hputts_'+i).value) : null,
     trbl:  el('htrbl_'+i)?el('htrbl_'+i).value.trim().toUpperCase():'',
     cmt:   el('hcmt_'+i)&&el('hcmt_'+i).value!=='' ? Number(el('hcmt_'+i).value) : null,
+    mp:    el('hmp_'+i)?el('hmp_'+i).value.trim().replace('½','=') : '',
   }));
   const tk=takeawayRow('rf');
   if(!tk){ toast('Both the theme and the one shot are needed'); return; }
@@ -2018,12 +2022,56 @@ async function renderTournaments(){
                 from a partial card should say so rather than sit next
                 to a real one pretending to be the same thing.
    ──────────────────────────────────────────────────────────────── */
-function tournamentResult(t){
-  // a match is whatever she typed — nothing here is derivable from a scorecard
-  if (t.type === 'match') return {kind:'match', text: t.score, won: t.won};
+/* ── The match, derived ──────────────────────────────────────────
+   She already writes + - ½ on a separate scorecard during a match, so
+   moving it onto the card costs nothing and retires the second sheet.
 
+   Three things fall out of it, and only the third was the one she was
+   drawn to:
+
+     1. THE RESULT COMES FREE. Walk the holes, carry the lead; the match
+        ends the moment the lead exceeds the holes remaining, which is
+        exactly what "3&2" means — three up with two to play. No typing
+        a result any more.
+
+     2. NO MORE GUESSED SCORES, which is the real prize. Her convention
+        was to invent a score for a hole conceded to her, and to write a
+        triple for one she conceded. Both put fiction into the one
+        dataset that is currently clean — and the triple lands precisely
+        on her worst holes. With the match in its own column the score
+        can simply be left blank: the margin carries the match, the card
+        carries the golf, and neither has to lie for the other.
+
+     3. Whether she wins holes with birdies or bogeys. Interesting, and
+        unreadable for years — five matches a season is not a sample.
+        A bonus, never the justification.
+   ──────────────────────────────────────────────────────────────── */
+function matchResult(holes){
+  const marks = (holes||[]).map(h => String(h.mp||'').trim());
+  if (!marks.some(m => m === '+' || m === '-' || m === '=')) return null;
+  let lead = 0;
+  for (let i = 0; i < marks.length; i++){
+    const m = marks[i];
+    if (m === '+') lead++; else if (m === '-') lead--;
+    const left = marks.length - 1 - i;
+    // dormie is |lead| === left and the match continues; it ends when it exceeds.
+    // A match decided ON the 18th is "1up", never "1&0" - nobody says 1&0.
+    if (Math.abs(lead) > left)
+      return {won: lead > 0, holes: i + 1,
+              text: left === 0 ? `${Math.abs(lead)}up` : `${Math.abs(lead)}&${left}`};
+  }
+  if (lead === 0) return {won: null, text: 'halved', holes: marks.length};
+  return {won: lead > 0, text: `${Math.abs(lead)}up`, holes: marks.length};
+}
+
+function tournamentResult(t){
   const r = (TROUNDS||[]).find(x => x.date === t.date && !x.stats_excluded);
-  if (r && r.matchplay) return {kind:'match', text: t.score, won: t.won};
+  // a match derived from the + - = column beats one typed by hand
+  if (t.type === 'match' || (r && r.matchplay)){
+    const m = r ? matchResult(r.holes_data) : null;
+    if (m) return {kind:'match', text: m.text, won: m.won, derived: true};
+    return {kind:'match', text: t.score, won: t.won};
+  }
   if (!r) return nn(t.score) ? {kind:'typed', text: t.score} : null;
 
   const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
@@ -2047,7 +2095,7 @@ function tournamentResultHtml(t){
     const col = R.won === true ? 'var(--gn)' : R.won === false ? 'var(--rd)' : 'var(--bl)';
     return `<div class="tscore" style="color:${col}" title="Match play — an exact result, never scaled">
       ${esc(R.text || (R.won ? 'won' : 'lost'))}
-      <div style="font-size:9px;font-weight:400;color:var(--bl)">match</div></div>`;
+      <div style="font-size:9px;font-weight:400;color:var(--bl)">${R.derived?'match ·  from card':'match'}</div></div>`;
   }
   if (R.kind === 'typed')
     return `<div class="tscore">${esc(R.text)}</div>`;
@@ -2479,7 +2527,7 @@ function cumScorecardHtml(rounds){
         <th style="${cell};text-align:left">Round</th><th style="${cell}">Hole</th>
         <th style="${cell}">Par</th><th style="${cell}">Score</th><th style="${cell}">GIR</th>
         <th style="${cell}">Drive</th><th style="${cell}">App</th><th style="${cell}">Short</th>
-        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Cmt</th></tr>
+        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">Mt</th><th style="${cell}">Cmt</th></tr>
       </thead><tbody>
       ${holes.map((h, i) => {
         const d = Number(h.score) - Number(h.par);
