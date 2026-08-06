@@ -84,38 +84,33 @@ const GOAL_METRICS = {
      Aim 1.5 a month across May-October, judged on PACE so far rather than the
      season total, or it reads red until October and then flips in a week. */
   away_comps(R){
+    /* Away, STROKE FORMAT, any day. Corrected twice by her and this is the
+       final shape: mid-week was my invention and wrong — weekend events count
+       perfectly well, when she plays is irrelevant to the goal. What matters is
+       that it is away and it is medal or stableford, not matchplay. Her two
+       Fontana rounds are a ranking tournament and obviously count.
+
+       Still counted as EVENTS, not rounds: consecutive days at one course are
+       one entry, because entering a two-day tournament is one decision. */
     const yr = new Date().getFullYear();
     const inSeason = d => { const m = Number(d.slice(5,7)); return m >= 5 && m <= 10; };
-    const comps = R.filter(r => r.comp && !r.stats_excluded
+    const comps = R.filter(r => r.comp && !r.stats_excluded && !r.matchplay
                              && r.date.slice(0,4) === String(yr) && inSeason(r.date)
                              && !HOME_COURSE.test(r.course || ''))
                    .sort((a,z) => a.date.localeCompare(z.date));
-
-    /* COLLAPSE FIRST, JUDGE SECOND. Filtering to mid-week before grouping
-       split the Sat-Sun-Mon Herzog block and left its Monday standing alone
-       as a "mid-week event" - which is precisely the team golf this metric
-       exists to exclude. A block counts only if EVERY one of its days is
-       Mon-Fri, so a weekend event that spills into Monday stays a weekend
-       event. */
-    const blocks = [];
-    let prev = null;
+    let events = 0, prev = null;
     for (const r of comps){
       const c = String(r.course||'').trim().toLowerCase().slice(0,6);
       const d = gmDate(r.date);
-      if (prev && prev.c === c && (d - prev.d)/86400000 <= 1) blocks[blocks.length-1].days.push(d);
-      else blocks.push({c, days:[d]});
+      if (!(prev && prev.c === c && (d - prev.d)/86400000 <= 1)) events++;
       prev = {c, d};
     }
-    const events = blocks.filter(bl =>
-      bl.days.every(d => d.getDay() >= 1 && d.getDay() <= 5)).length;
-
     const now = new Date();
     const monthsIn = Math.min(6, Math.max(0, (Math.min(10, now.getMonth()+1) - 5) + now.getDate()/30));
     if (monthsIn < 0.5) return {txt:'season not started', state:null};
     const due = 1.5 * monthsIn;
     const ratio = due ? events/due : 1;
-    return {val: events,
-            txt: `${events} mid-week away · ${due.toFixed(0)} due`,
+    return {val: events, txt: `${events} away event${events===1?'':'s'} · ${due.toFixed(0)} due`,
             state: ratio >= 0.9 ? 'good' : ratio >= 0.6 ? 'warn' : 'bad'};
   },
 
@@ -317,7 +312,7 @@ async function renderGoals(){
   let gRounds;
   [GOALS, gRounds] = await Promise.all([
     sel('goals', 'select=*&order=horizon.asc,sort.asc,id.asc'),
-    selSoft('golf_rounds', 'select=date,course,comp,stats_excluded,holes_data&order=date.asc'),
+    selSoft('golf_rounds', 'select=date,course,comp,matchplay,stats_excluded,holes_data&order=date.asc'),
   ]);
   GOALS = GOALS || []; gRounds = gRounds || [];
   const canEdit = ME.role === 'teacher' || GOALS_STUDENT_WRITABLE;
