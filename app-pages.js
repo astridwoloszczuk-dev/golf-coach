@@ -1459,7 +1459,7 @@ function setFoci(p,arr){ (arr||[]).forEach(f=>{const b=document.querySelector('#
 
 function simpleFormHtml(){
   return `<div class="card"><div class="ct">${editId!==null?'Edit round':'Quick add'}</div>
-    <div class="g2"><div class="fr"><label>Date</label><input type="date" id="sr_d"></div>
+    <div class="g2"><div class="fr"><label>Date</label><input type="date" id="sr_d" value="${editId===null?todayYmd():''}"></div>
       <div class="fr"><label>Course</label><input type="text" id="sr_c" placeholder="Fontana"></div></div>
     <div class="g2"><div class="fr"><label>Tee</label><input type="text" id="sr_t" placeholder="e.g. Yellow"></div>
       <div class="fr"><label>Holes</label><select id="sr_h"><option value="9">9 holes</option><option value="18" selected>18 holes</option></select></div></div>
@@ -1497,7 +1497,11 @@ function holeBoxHtml(i){
 
 function cardFormHtml(){
   return `<div class="card"><div class="ct">${editId!==null?'Edit round':'New round — check &amp; save'}</div>
-    <div class="g2"><div class="fr"><label>Date</label><input type="date" id="rf_d"></div>
+    <!-- DEFAULTS TO TODAY on a new round. It started blank, which is how a
+         practice round entered on 7 Aug ended up dated 9 July and vanished a
+         month down the feed. Backdating is now a deliberate act; today is free.
+         Editing overwrites this with the round's own date just below. -->
+    <div class="g2"><div class="fr"><label>Date</label><input type="date" id="rf_d" value="${editId===null?todayYmd():''}"></div>
       <div class="fr"><label>Course</label><input type="text" id="rf_c" placeholder="Fontana"></div></div>
     <div class="fr" style="display:flex;align-items:center;gap:18px;margin:6px 0 14px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="rf_co" style="width:18px;height:18px;accent-color:var(--ac)">Competitive</label>
