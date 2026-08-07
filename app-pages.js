@@ -1444,8 +1444,6 @@ function historyHtml(){
       </div>
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
-      ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
-        `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}
       ${isOpen?roundDetailHtml(r):''}
@@ -2915,6 +2913,8 @@ async function renderSummary(){
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
         ${s.cmtPct!=null?`<span style="font-weight:700;color:var(--tx)">Cmt:${s.cmtPct}%</span>`:''}
         ${r.stats_excluded?'<span class="bp">not counted</span>':''}</div>
+      ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
+        `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
