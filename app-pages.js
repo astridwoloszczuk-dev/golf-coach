@@ -1302,10 +1302,18 @@ function deriveRoundStats(hd){
        which are the W/O/U marks. A penalty is not a shot you failed to commit
        to. Bunkers carry none. Known limit: one Trbl code per hole, so two
        penalties on one hole quietly inflate that hole's denominator. */
-    const withCmt = played.filter(h => h.cmt != null && h.cmt !== '');
-    if (withCmt.length){
-      const dots = withCmt.reduce((a,h)=>a+Number(h.cmt||0),0);
-      const shots = withCmt.reduce((a,h)=>a + Number(h.score)
+    /* ⚠ THE DENOMINATOR IS THE WHOLE ROUND, not the dotted holes.
+       First version summed shots only over holes carrying a dot, so 2 dots on
+       one hole of 8 shots read 75% instead of 95% — every hole left blank,
+       which MEANS fully committed, was thrown out of the denominator. Exactly
+       backwards: a blank is data, not an absence.
+       The presence of any dot is only the trigger for showing the figure at
+       all; without that a round she never marked would read a meaningless
+       100%. */
+    const usedCmt = played.some(h => h.cmt != null && h.cmt !== '');
+    if (usedCmt){
+      const dots  = played.reduce((a,h)=>a+Number(h.cmt||0), 0);
+      const shots = played.reduce((a,h)=>a + Number(h.score)
         - (['W','O','U'].includes(tr(h)) ? 1 : 0), 0);
       o.cmtDots = dots;
       o.cmtPct = shots > 0 ? Math.round((1 - dots/shots) * 100) : null;
