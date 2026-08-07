@@ -1436,6 +1436,8 @@ function historyHtml(){
       </div>
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
+      ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
+        `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}
       ${isOpen?roundDetailHtml(r):''}
@@ -2895,7 +2897,9 @@ async function renderSummary(){
     h += `<div class="rrow"><div style="display:flex;justify-content:space-between;gap:8px">
         <b style="font-size:13.5px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--b2);text-underline-offset:3px"
           onclick="openRound=${r.id};go('rounds')">${esc(r.date)}${r.course?' · '+esc(r.course):''}</b>
-        ${r.comp?'<span class="bi">Comp</span>':''}</div>
+        <span style="display:flex;gap:5px;flex-shrink:0">
+          ${r.comp?'<span class="bi">Comp</span>':''}${r.practice?'<span class="bp">Practice</span>':''}
+        </span></div>
       <div style="font-size:12px;color:var(--mu);display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">
         ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} par</span>`:''}
         ${s.posPct!=null?`<span style="font-weight:700;color:var(--tx)">Pos:${s.posPct}%</span>`:''}
