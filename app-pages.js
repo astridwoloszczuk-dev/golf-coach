@@ -741,7 +741,16 @@ function openAssignmentSheet(a){
       <input type="checkbox" id="a-done" ${a.done?'checked':''} style="width:20px;height:20px;accent-color:var(--gn)"> Done
     </label>
     <div class="fr"><label>Score${d.scoring_hint ? ' — '+esc(d.scoring_hint) : ''}</label>
-      <input type="number" id="a-score" step="any" value="${nn(a.score)?a.score:''}" placeholder="—"></div>
+      <!-- ± BUTTON, because a phone's number pad has no minus key. Her Best Ball
+           score was -2 and the field simply would not accept it, so it went in
+           as 0 with the real number stranded in the notes. A sign toggle works
+           on every keyboard and cannot be mistyped. -->
+      <div style="display:flex;gap:7px">
+        <input type="number" id="a-score" step="any" inputmode="decimal"
+               value="${nn(a.score)?a.score:''}" placeholder="—" style="flex:1">
+        <button type="button" class="btn btns" onclick="flipScoreSign()"
+                title="Make it negative, or positive again" style="flex-shrink:0;min-width:44px">±</button>
+      </div></div>
     <div class="fr"><label>Note</label><textarea id="a-note" rows="2" placeholder="How did it actually go?">${esc(a.note||'')}</textarea></div>
     <div class="rbtns">
       <button class="btn btnp" onclick="saveAssignment(${a.id})">Save</button>
@@ -751,6 +760,17 @@ function openAssignmentSheet(a){
         : `<button class="btn btnd" onclick="removeAssignment(${a.id})">Remove</button>`}
     </div>`);
 }
+/* Flips the sign of whatever is in the score box. Golf scores are routinely
+   negative — under par, up-and-downs against a target, a Best Ball at -2 — and
+   a numeric keypad offers no way to say so. */
+function flipScoreSign(){
+  const el0 = el('a-score');
+  if (!el0) return;
+  const v = el0.value.trim();
+  if (v === '' || isNaN(Number(v))) { el0.value = '-'; el0.focus(); return; }
+  el0.value = String(-Number(v));
+}
+
 async function saveAssignment(id){
   const done = el('a-done').checked;
   const sc = gv('a-score');
