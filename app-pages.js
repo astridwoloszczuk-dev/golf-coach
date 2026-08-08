@@ -2918,6 +2918,9 @@ async function renderSummary(){
       ${r.takeaway?`<div style="font-size:12px;color:var(--gn2);margin-top:4px">✓ ${esc(takeawayLabel(r.takeaway))}${r.takeaway_note?` — <span style="color:var(--mu);font-style:italic">${esc(r.takeaway_note)}</span>`:''}</div>`:''}
       ${r.notes?`<div style="font-size:12px;color:var(--mu);margin-top:4px;font-style:italic;white-space:pre-wrap">${esc(r.notes)}</div>`:''}</div>`;
   }
+  h += `</div>`;   // ← close the ROUNDS card. Without it every card that follows
+                   //   — goals, next tournament, her notes — rendered nested
+                   //   inside it, which is why the page ended in one huge box.
 
   /* — goals + next tournament — */
   // Only what needs attention: NOW goals that are at-risk or stalled. A wall of
