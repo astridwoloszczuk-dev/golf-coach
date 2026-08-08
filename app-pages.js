@@ -2747,7 +2747,7 @@ async function renderSummary(){
   const back4 = ymd(addDays(WEEK,-21));   // this week + 3 back, for the streak check
 
   const fortnight = ymd(addDays(parseYmd(todayYmd()),14));
-  const [asg, subs, rounds, goals, tourn, note, refl] = await Promise.all([
+  const [asg, subs, rounds, goals, tourn, note, refl, cins] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category)&week_start=gte.${back4}&week_start=lte.${wk}&order=week_start.asc`),
     sel('week_submissions', `select=submitted_at,snapshot&week_start=eq.${wk}&order=submitted_at.asc`),
     // A YEAR of rounds, not a week: the gap table compares social with
@@ -2762,7 +2762,17 @@ async function renderSummary(){
     sel('tournaments', `select=*&date=gte.${wk}&date=lte.${fortnight}&order=date.asc`),
     sel('weekly_notes', `select=note&week_start=eq.${wk}`),
     selSoft('week_reflections', `select=*&week_start=eq.${wk}`),
+    // the check-ins, for the mood dots in the Tournaments tile
+    selSoft('check_ins', 'select=*'),
   ]);
+
+  /* tournamentResultHtml() and moodDot() read the globals that the TOURNAMENTS
+     page fills in — TROUNDS and CHECKINS. This page never populated either, so
+     the expanded tile drew empty pills and no result while the notes, which
+     come straight off the tournament row, came through fine. Point them at what
+     this page has already fetched rather than fetching twice. */
+  TROUNDS  = rounds || [];
+  CHECKINS = cins   || [];
 
   const thisWeek = (asg||[]).filter(a => a.week_start === wk);
   const planned  = thisWeek.filter(a => a.day_index != null);
