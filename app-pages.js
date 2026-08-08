@@ -750,6 +750,14 @@ function openAssignmentSheet(a){
                value="${nn(a.score)?a.score:''}" placeholder="—" style="flex:1">
         <button type="button" class="btn btns" onclick="flipScoreSign()"
                 title="Make it negative, or positive again" style="flex-shrink:0;min-width:44px">±</button>
+        <!-- what the score was measured over, where that varies with the round.
+             "-2" alone is uncomparable: -2 over 8 is not -2 over 18. Drills with
+             a fixed hint ("out of 9") need nothing here, hence optional. -->
+        <span style="align-self:center;color:var(--mu);font-size:12.5px;flex-shrink:0">over</span>
+        <input type="number" id="a-outof" step="any" inputmode="numeric"
+               value="${nn(a.out_of)?a.out_of:''}" placeholder="—"
+               title="Holes or reps this score was measured over (optional)"
+               style="flex:0 0 66px">
       </div></div>
     <div class="fr"><label>Note</label><textarea id="a-note" rows="2" placeholder="How did it actually go?">${esc(a.note||'')}</textarea></div>
     <div class="rbtns">
@@ -774,9 +782,11 @@ function flipScoreSign(){
 async function saveAssignment(id){
   const done = el('a-done').checked;
   const sc = gv('a-score');
+  const oo = gv('a-outof');
   await upd('assignments','id=eq.'+id, {
     done,
     score: sc === '' ? null : Number(sc),
+    out_of: oo === '' ? null : Number(oo),
     note: gv('a-note') || null,
     done_at: done ? new Date().toISOString() : null,
   });
@@ -2586,7 +2596,8 @@ function sumDetail(items){
       <span style="flex-shrink:0">${i.done?'<span class="good">\u2713</span>':'<span class="bad">\u2717</span>'}</span>
       <div style="flex:1;min-width:0;font-size:13px;line-height:1.5">
         ${esc(i.name)}
-        ${nn(i.score)?` <b style="color:var(--ac)">${esc(String(i.score))}</b>`:''}
+        ${nn(i.score)?` <b style="color:var(--ac)">${esc(String(i.score))}${
+          i.outOf!=null?` over ${esc(String(i.outOf))}`:''}</b>`:''}
         ${i.when?`<span style="color:var(--mu);font-size:11.5px"> \u00b7 ${esc(i.when)}</span>`:''}
         ${i.dots?`<span style="margin-left:7px;display:inline-flex;gap:3px;vertical-align:middle">${i.dots}</span>`:''}
         ${i.note?`<div style="font-size:11.5px;color:var(--mu);font-style:italic;margin-top:2px">${esc(i.note)}</div>`:''}
@@ -2859,6 +2870,7 @@ async function renderSummary(){
   const pace = Math.round(elapsed*100/7);
 
   const mapA = l => l.map(a => ({done:!!a.done, name:(a.drills||{}).name||'—', score:a.score,
+                                outOf:a.out_of,
                                 when:(weekDays()[a.day_index]||{}).label, note:a.note}));
 
   let h = weekNavHtml(fmtRange(WEEK));
@@ -2996,7 +3008,10 @@ async function renderSummary(){
           ${r.comp?'<span class="bi">Comp</span>':''}${r.practice?'<span class="bp">Practice</span>':''}
         </span></div>
       <div style="font-size:12px;color:var(--mu);display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">
-        ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} par</span>`:''}
+        <!-- "+13 over 15" rather than "+13 par": a score to par is unreadable
+             without knowing how many holes it came from, and this page carries
+             part-rounds routinely. -->
+        ${s.delta!=null?`<span style="font-weight:700;color:var(--tx)">${s.delta>0?'+':''}${s.delta} over ${s.n}</span>`:''}
         ${s.posPct!=null?`<span style="font-weight:700;color:var(--tx)">Pos:${s.posPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
