@@ -125,8 +125,16 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .pill.by-teacher{border:1.5px solid var(--bl);   background:rgba(96,165,250,.13)}
 .pill.by-claude {border:1.5px solid #f0a640;     background:rgba(240,166,64,.13)}
 .pill.by-student{border:1.5px solid #b39ddb;     background:rgba(179,157,219,.13)}
+/* DONE MUST NOT ERASE WHO SET IT. Both rules previously repainted the border
+   green, so a completed drill lost its authorship — which defeats the point of
+   colouring by author at all, since most of the week ends up done. The BORDER
+   stays the author's, permanently; completion shows as a green fill and a tick.
+   Two facts, two channels. */
+.pill.by-teacher.done{border-color:var(--bl)}
+.pill.by-claude.done {border-color:#f0a640}
+.pill.by-student.done{border-color:#b39ddb}
 .pill.by-teacher.done,.pill.by-claude.done,.pill.by-student.done{
-  background:rgba(74,222,128,.16);border-color:rgba(74,222,128,.55)}
+  background:rgba(74,222,128,.20);color:var(--gn2)}
 .authkey{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--mu);margin:2px 0 10px}
 .authkey i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:4px;vertical-align:-1px}
 .pill.sel{outline:2px solid var(--ac);outline-offset:1px}
@@ -826,6 +834,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260808-3"></script>
+<script src="app-pages.js?v=20260808-4"></script>
 </body>
 </html>

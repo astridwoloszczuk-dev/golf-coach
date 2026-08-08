@@ -2810,7 +2810,24 @@ async function renderSummary(){
      filled, not a third party adding work. So teacher + claude = the quota,
      student = extra, shown beside it rather than inside it. */
   const isCoach = a => (a.assigned_by || 'student') !== 'student';
-  const quota   = [...dg, ...ocp].filter(isCoach);
+
+  /* ⚠ THE QUOTA IS EVERY COACH-SET ASSIGNMENT, PLACED OR NOT.
+
+     She spotted the hole: dg/ocp are built from `planned`, i.e. day_index is
+     not null. So dragging one of Wes's drills back to the tray removed it from
+     the DENOMINATOR rather than showing it undone — two set, one done, one in
+     the tray read as 1/1 and a green wheel. Which is precisely the move a week
+     under pressure invites, and it would have been invisible.
+
+     PLACING IS HER PLANNING; IT IS NOT HER CONSENT TO BE MEASURED. If Wes set
+     two, the quota is two, wherever they are sitting.
+
+     Her own extras are counted only once placed — those are proposals she
+     makes, and an idea left in the tray was never a commitment. The asymmetry
+     is the point: his are set FOR her, hers are set BY her. */
+  const wkAll   = thisWeek.filter(a => cat(a) !== undefined);
+  const quota   = wkAll.filter(isCoach);
+  const unplaced = quota.filter(a => a.day_index == null);
   const extra   = [...dg, ...ocp].filter(a => !isCoach(a));
 
   const totalN = quota.length + wkT.length;
@@ -2834,6 +2851,11 @@ async function renderSummary(){
         ${sumTile('ocp','On Course Practise', ocp.filter(a=>a.done).length, ocp.length)}
         ${sumTile('t','Tournaments', tDone.length, wkT.length)}
       </div></div>
+    ${unplaced.length ? `<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--b1);
+        font-size:11.5px;color:var(--ye)">
+      <b>${unplaced.length} still in the tray</b> — counted, not yet on a day:
+      ${unplaced.map(a=>esc((a.drills||{}).name||'?')).join(', ')}
+    </div>` : ''}
     ${extra.length ? `<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--b1);
         font-size:11.5px;color:var(--mu)">
       <b style="color:#b39ddb">+ ${extraDone}/${extra.length} extra</b> she set herself —
