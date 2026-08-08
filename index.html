@@ -119,9 +119,16 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
   touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .pill .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pill.done{background:rgba(74,222,128,.16);border-color:rgba(74,222,128,.5);color:var(--gn2)}
-.pill.by-teacher{border-left:3px solid var(--bl)}
-.pill.by-claude{border-left:3px solid var(--pu)}
-.pill.by-student{border-left:3px solid var(--b2)}
+/* WHO SET IT, all the way round rather than a stripe down one edge — at pill
+   size a 3px left border reads as a rendering artefact, not as authorship.
+   Blue Wes (his existing colour, kept), amber Claude, lilac hers. */
+.pill.by-teacher{border:1.5px solid var(--bl);   background:rgba(96,165,250,.13)}
+.pill.by-claude {border:1.5px solid #f0a640;     background:rgba(240,166,64,.13)}
+.pill.by-student{border:1.5px solid #b39ddb;     background:rgba(179,157,219,.13)}
+.pill.by-teacher.done,.pill.by-claude.done,.pill.by-student.done{
+  background:rgba(74,222,128,.16);border-color:rgba(74,222,128,.55)}
+.authkey{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--mu);margin:2px 0 10px}
+.authkey i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:4px;vertical-align:-1px}
 .pill.sel{outline:2px solid var(--ac);outline-offset:1px}
 .pill .sc{font-size:11px;font-weight:700;color:var(--ac)}
 .pill.drag{position:fixed;z-index:500;pointer-events:none;opacity:.94;box-shadow:0 8px 24px rgba(0,0,0,.55);cursor:grabbing}
@@ -819,6 +826,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260808-2"></script>
+<script src="app-pages.js?v=20260808-3"></script>
 </body>
 </html>

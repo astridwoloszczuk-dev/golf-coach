@@ -746,7 +746,9 @@ function openAssignmentSheet(a){
     <div class="rbtns">
       <button class="btn btnp" onclick="saveAssignment(${a.id})">Save</button>
       <button class="btn" onclick="moveToTray(${a.id})">Back to tray</button>
-      <button class="btn btnd" onclick="removeAssignment(${a.id})">Remove</button>
+      ${(a.assigned_by==='teacher' && ME.role!=='teacher')
+        ? `<span class="empty" style="padding:0;font-size:11.5px;align-self:center">${esc(TEACHER_NAME)} set this — his to remove</span>`
+        : `<button class="btn btnd" onclick="removeAssignment(${a.id})">Remove</button>`}
     </div>`);
 }
 async function saveAssignment(id){
@@ -761,9 +763,18 @@ async function saveAssignment(id){
   closeSheet(); renderWeek();          // silent — no notify() here, deliberately
 }
 async function moveToTray(id){ closeSheet(); await placeAssignment(id, null); }
+/* The database is the real guard (migration 19: only the teacher may delete a
+   teacher-set row). This is the courtesy layer — hiding the button so she never
+   presses something that will silently affect nothing. Both matter: without the
+   RLS it is theatre, without the UI it is a dead button. */
 async function removeAssignment(id){
+  const a = (ASSIGN||[]).find(x=>x.id===id);
+  if (a && a.assigned_by === 'teacher' && ME.role !== 'teacher'){
+    toast(`${TEACHER_NAME} set that one — only he can remove it`); return;
+  }
   if (!confirm('Remove this from the week?')) return;
-  await del('assignments','id=eq.'+id);
+  try { await del('assignments','id=eq.'+id); }
+  catch(e){ toast('Not removed — ' + e.message.slice(0,60)); return; }
   closeSheet(); renderWeek();
 }
 
@@ -2787,8 +2798,24 @@ async function renderSummary(){
   const wkT = (tourn||[]).filter(t => t.date >= wk && t.date <= wkEnd);
   const tDone = wkT.filter(t => (t.score||'').trim() || t.date < todayYmd());
 
-  const totalN = dg.length + ocp.length + wkT.length;
-  const doneN  = dg.filter(a=>a.done).length + ocp.filter(a=>a.done).length + tDone.length;
+  /* THE WHEEL IS THE COACH'S QUOTA, not everything she did.
+
+     Her rule, 8 Aug, and it is the right one: what Wes set is the thing being
+     measured. Anything she adds herself is EXTRA — doing four when two were
+     asked for should not read as 200%, and it should certainly not let her
+     hit 100% while leaving one of his untouched.
+
+     Claude's rows count as HIS quota, deliberately. Claude only ever assigns
+     because he did not get there before 22:03 on Sunday; it is his slot being
+     filled, not a third party adding work. So teacher + claude = the quota,
+     student = extra, shown beside it rather than inside it. */
+  const isCoach = a => (a.assigned_by || 'student') !== 'student';
+  const quota   = [...dg, ...ocp].filter(isCoach);
+  const extra   = [...dg, ...ocp].filter(a => !isCoach(a));
+
+  const totalN = quota.length + wkT.length;
+  const doneN  = quota.filter(a=>a.done).length + tDone.length;
+  const extraDone = extra.filter(a=>a.done).length;
   const pct    = totalN ? Math.round(doneN*100/totalN) : 0;
   // Where she SHOULD be by today. Monday morning expects nothing.
   const elapsed = Math.min(7, Math.max(0, Math.round((parseYmd(todayYmd()) - WEEK)/86400000) + 1));
@@ -2807,6 +2834,16 @@ async function renderSummary(){
         ${sumTile('ocp','On Course Practise', ocp.filter(a=>a.done).length, ocp.length)}
         ${sumTile('t','Tournaments', tDone.length, wkT.length)}
       </div></div>
+    ${extra.length ? `<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--b1);
+        font-size:11.5px;color:var(--mu)">
+      <b style="color:#b39ddb">+ ${extraDone}/${extra.length} extra</b> she set herself —
+      not counted in the wheel${extra.length ? ': ' + extra.map(a=>esc((a.drills||{}).name||'?')).join(', ') : ''}
+    </div>` : ''}
+    <div class="authkey" style="margin-top:9px">
+      <span><i style="background:var(--bl)"></i>${esc(TEACHER_NAME)}</span>
+      <span><i style="background:#f0a640"></i>Claude</span>
+      <span><i style="background:#b39ddb"></i>Astrid</span>
+    </div>
     ${sumOpen==='dg' ? sumDetail(mapA(dg)) : ''}
     ${sumOpen==='ocp'? sumDetail(mapA(ocp)) : ''}
     ${sumOpen==='t'  ? sumDetail(wkT.map(t => ({
