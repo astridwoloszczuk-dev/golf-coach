@@ -1461,6 +1461,79 @@ function roundStatsHtml(){
   return h+`</div>`;
 }
 
+/* ── matchplay: the result, read off the MP column ───────────────
+   Added 11 Aug 2026. Her Dürnberg match went to the 20th and the summary read
+   "17 holes · +12 par (+12.7/18)" — which hides that she played 20, and
+   projects a per-18 stroke average for a round she was never trying to card.
+   The result was sitting in the MP marks the whole time and nothing read them.
+
+   She proposed imputing the unscored holes instead (par if won, double bogey
+   if lost, marked with a ~). Turned down, and worth writing down why: matchplay
+   is already excluded from every scoring statistic, so invented numbers would
+   feed nothing and exist only to make one line read better — and the guess is
+   wrong in a knowable direction, since a hole is usually conceded precisely
+   when the score would have been worse than the guess. The card's own rule from
+   4 Aug stands: a blank is a legitimate value, and the app does not infer.
+
+   NOT-HOLED-OUT IS NOT "CONCEDED". Her correction, and she is right: of her
+   three unscored holes she WON two — the opponent picked up. Lumping them
+   together reads as three holes given away. Direction is in the tooltip; the
+   visible label stays neutral. */
+function ordinalHole(n){
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
+}
+
+function matchResult(hd){
+  const rows = (hd||[]).map((h,i)=>({i:i+1, m:String(h && h.mp || '').trim()}))
+                       .filter(r => r.m !== '');
+  if (rows.length < 9) return null;            // too few marks to call a match
+  const N = 18;
+  let up = 0;
+  for (const r of rows){
+    if (r.m === '+') up++;
+    else if (r.m === '-' || r.m === '−') up--;
+    if (r.i <= N){
+      const left = N - r.i;
+      if (Math.abs(up) > left){
+        // decided: standard notation is "holes up & holes remaining"
+        return { won: up > 0,
+                 txt: (up > 0 ? 'Won ' : 'Lost ') + (left === 0 ? Math.abs(up)+' up' : Math.abs(up)+'&'+left) };
+      }
+    } else if (up !== 0){
+      // extra holes — settled the moment someone is ahead
+      return { won: up > 0, txt: (up > 0 ? 'Won' : 'Lost') + ' on the ' + ordinalHole(r.i) };
+    }
+  }
+  return up === 0 ? { won:null, txt:'Halved' }
+                  : { won: up > 0, txt: (up > 0 ? 'Won ' : 'Lost ') + Math.abs(up) + ' up' };
+}
+
+/* "20 holes · 17 scored" beats "17 holes" whenever the two differ — including
+   the ordinary case of a card she chose not to fill in completely. */
+function holesSummary(r, s){
+  const hd = r.holes_data || [];
+  const played = Number(r.holes) || s.n || hd.length || 0;
+  if (!played) return { label:'? holes', title:'' };
+  if (!s.n || s.n >= played) return { label: played + ' holes', title:'' };
+
+  const open = hd.map((h,i)=>({no:i+1, m:String(h && h.mp || '').trim(),
+                               scored: String(h && h.score != null ? h.score : '').trim() !== ''}))
+                 .filter(x => !x.scored && x.m !== '');
+  const mine  = open.filter(x => x.m === '+');                       // won — they picked up
+  const theirs= open.filter(x => x.m === '-' || x.m === '−');   // conceded by her
+  let label = played + ' holes · ' + s.n + ' scored';
+  let title = '';
+  if (open.length){
+    label += ' · ' + open.length + ' not holed out';
+    const bits = [];
+    if (mine.length)   bits.push(mine.length + ' won without holing out (hole' + (mine.length>1?'s ':' ') + mine.map(x=>x.no).join(', ') + ')');
+    if (theirs.length) bits.push(theirs.length + ' conceded by you (hole' + (theirs.length>1?'s ':' ') + theirs.map(x=>x.no).join(', ') + ')');
+    title = bits.join(' · ');
+  }
+  return { label, title };
+}
+
 function historyHtml(){
   if (!ROUNDS.length) return `<div class="card"><div class="empty">No rounds logged yet.</div></div>`;
   let h=`<div class="card"><div class="ct">Round history · ${ROUNDS.length}</div>`;
@@ -1468,6 +1541,8 @@ function historyHtml(){
     const s=getRoundStats(r);
     const sc18=(v,n)=>v!==null&&n>0?v*18/n:null;
     const dScaled=sc18(s.delta,s.n);
+    const mr = r.matchplay ? matchResult(r.holes_data) : null;
+    const hs = holesSummary(r, s);
     const isOpen = openRound === r.id;
     h+=`<div class="rrow">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">
@@ -1485,10 +1560,14 @@ function historyHtml(){
           <button class="btn btns btnd" onclick="deleteRound(${r.id})">✕</button>`:''}
         </div>
       </div>
+      ${mr?`<div style="font-size:13px;font-weight:700;margin:2px 0 3px;color:${mr.won===true?'var(--gn)':mr.won===false?'var(--rd)':'var(--ye)'}">${esc(mr.txt)}</div>`:''}
       <div style="font-size:12px;color:var(--mu);display:flex;flex-wrap:wrap;gap:8px">
-        <span>${s.n||r.holes||'?'} holes</span>
+        <span${hs.title?` title="${esc(hs.title)}"`:''}>${esc(hs.label)}</span>
         ${r.tee?`<span>Tee: ${esc(r.tee)}</span>`:''}
-        ${s.delta!==null?`<span style="font-weight:700;color:var(--tx)">${Number(s.delta)>0?'+':''}${s.delta} par${s.n<18?' ('+((dScaled>0?'+':'')+Number(dScaled).toFixed(1))+'/18)':''}</span>`:''}
+        <!-- The /18 projection is suppressed on matchplay: scaling a stroke
+             total up from a card with conceded holes in it invents the very
+             number we declined to invent per hole. -->
+        ${s.delta!==null?`<span style="font-weight:700;color:var(--tx)">${Number(s.delta)>0?'+':''}${s.delta} par${(!r.matchplay&&s.n<18)?' ('+((dScaled>0?'+':'')+Number(dScaled).toFixed(1))+'/18)':''}</span>`:''}
         ${s.gir!==null?`<span>GIR:${s.gir}</span>`:''}
         ${s.fw!==null?`<span>FW:${s.fw}</span>`:''}
         ${s.ud!==null?`<span>U&amp;D:${s.ud}</span>`:''}
