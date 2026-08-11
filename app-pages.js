@@ -2838,6 +2838,14 @@ function cumScorecardHtml(rounds){
           <td style="${cell}">${mark(h.short)}</td>
           <td style="${cell};color:var(--mu)">${h.putts == null ? '<span style="color:var(--b1)">\u00b7</span>' : h.putts}</td>
           <td style="${cell}">${mark(h.trbl)}</td>
+          <!-- MP was in the header row and NOT in the body: twelve columns of
+               heading over eleven cells, so Cmt slid left under MP and nothing
+               rendered under Cmt at all. Found by Astrid 11 Aug reading Wes's
+               summary. The single-round card at roundDetailHtml() has always had
+               both \u2014 this table is a second, older copy of the same layout and
+               only one of them was kept current when MP arrived. -->
+          <td style="${cell};font-weight:700;color:${h.mp === '+' ? 'var(--gn)' : h.mp === '-' ? 'var(--rd)' : 'var(--mu)'}">${
+            h.mp === '=' ? '\u00bd' : (h.mp ? esc(h.mp) : '<span style="color:var(--b1)">\u00b7</span>')}</td>
           <td style="${cell};color:${h.cmt ? 'var(--rd)' : 'var(--b1)'}">${
             h.cmt ? '\u25cf'.repeat(Math.min(5, Number(h.cmt))) : '\u00b7'}</td>
         </tr>`;
