@@ -1001,6 +1001,19 @@ async function archiveDrill(id){
 let ROUNDS = [], roundMode = 'select', editId = null;
 let scanFiles = [null,null], scanPreviews = [null,null];
 
+/* How many hole boxes the manual card is showing. 18 unless she adds more.
+   Added 11 Aug 2026: her Dürnberg match went to the 20th and there was nowhere
+   to put holes 19 and 20 — the card was a hardcoded Array.from({length:18}).
+   Extra holes are a matchplay fact, not an edge case: any match that reaches
+   all square on 18 keeps going.
+
+   Nothing downstream needed changing, which is the reassuring part — every
+   statistic already works off the number of holes actually filled in
+   (deriveRoundStats uses played.length, the scoring trend scales × 18 / n), so
+   a 20-hole card averages honestly rather than reading as +2 too many. */
+let cardHoles = 18;
+const BASE_HOLES = 18;
+
 /* ── Comp round → Wes ────────────────────────────────────────────
    Added 4 Aug 2026. The SPEC said "submit + Sunday digest only, never
    per-tick"; that rule was written about habit ticks, and a competition
@@ -1244,8 +1257,8 @@ async function renderRounds(){
 
 // Called by the router on page entry (not by the internal re-renders).
 function resetRounds(){ roundMode='select'; editId=null; scanFiles=[null,null]; scanPreviews=[null,null]; }
-function setRoundMode(m){ roundMode = m; editId = null; renderRounds(); }
-function cancelRound(){ roundMode='select'; editId=null; scanFiles=[null,null]; scanPreviews=[null,null]; renderRounds(); }
+function setRoundMode(m){ roundMode = m; editId = null; cardHoles = BASE_HOLES; renderRounds(); }
+function cancelRound(){ roundMode='select'; editId=null; cardHoles=BASE_HOLES; scanFiles=[null,null]; scanPreviews=[null,null]; renderRounds(); }
 
 /* ── stats (verbatim logic from the tracker) ─────────────────── */
 function deriveRoundStats(hd){
@@ -1555,10 +1568,27 @@ function cardFormHtml(){
     <div class="fr" style="display:flex;align-items:center;gap:18px;margin:6px 0 14px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="rf_co" style="width:18px;height:18px;accent-color:var(--ac)">Competitive</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="rf_pr" onchange="toggleFocus('rf')" style="width:18px;height:18px;accent-color:var(--gn)">On-course practice</label>
+      <!-- MATCHPLAY was readable by the statistics and writable by nobody: the
+           column has been filtered on since June (scoring trend, best comp,
+           away-round count all skip matchplay) but no screen in the app ever
+           set it. The seven flagged rows were backfilled by hand. So every
+           match she has entered since has been counted as a stroke round, which
+           is what the exclusion exists to prevent — a conceded hole is a blank,
+           and blanks make a card look better than the golf was. -->
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Match, not stroke play. Kept out of the scoring trend, best-round and away-round counts — conceded holes make a card uncomparable."><input type="checkbox" id="rf_mp" style="width:18px;height:18px;accent-color:var(--ye)">Matchplay</label>
     </div>
     ${focusBlockHtml('rf')}
     <div class="dl">Holes</div>
-    <div>${Array.from({length:18},(_,i)=>holeBoxHtml(i)).join('')}</div>
+    <div id="rf_holes">${Array.from({length:cardHoles},(_,i)=>holeBoxHtml(i)).join('')}</div>
+    <!-- Extra holes are APPENDED TO THE DOM, never via a re-render. A re-render
+         rebuilds every input from scratch and would throw away a half-entered
+         card — which is exactly when she'd be reaching for this button, on the
+         18th hole of a match that hasn't finished. -->
+    <div class="rbtns" style="margin-top:2px">
+      <button class="btn btns" onclick="addCardHole()">＋ Extra hole</button>
+      <button class="btn btns" id="rf_delhole" onclick="removeCardHole()"
+        style="display:${cardHoles>BASE_HOLES?'':'none'}">− Remove hole ${cardHoles}</button>
+    </div>
     <div class="dl">Notes</div>
     <div class="fr"><textarea id="rf_n" placeholder="What didn't work?"></textarea></div>
     ${takeawayHtml('rf','','','')}
@@ -1567,7 +1597,43 @@ function cardFormHtml(){
       <button class="btn" onclick="cancelRound()">Cancel</button></div></div>`;
 }
 
-function editRound(id){ editId=id; const r=ROUNDS.find(x=>x.id===id); roundMode = (r&&r.is_simple)?'simple':'manual'; renderRounds(); }
+function addCardHole(){
+  const box = el('rf_holes');
+  if (!box) return;
+  cardHoles++;
+  box.insertAdjacentHTML('beforeend', holeBoxHtml(cardHoles-1));
+  syncHoleBtn();
+  box.lastElementChild.scrollIntoView({behavior:'smooth', block:'center'});
+}
+function removeCardHole(){
+  const box = el('rf_holes');
+  if (!box || cardHoles <= BASE_HOLES) return;
+  // Only warn if there is something to lose — an accidental tap on ＋ should
+  // cost one tap to undo, not a confirm dialog.
+  const i = cardHoles-1;
+  const filled = ['hp_','hs_','hdrive_','happ_','hshort_','hputts_','htrbl_','hmp_','hcmt_']
+    .some(p => el(p+i) && String(el(p+i).value||'').trim() !== '');
+  if (filled && !confirm(`Hole ${cardHoles} has something in it. Remove it anyway?`)) return;
+  box.lastElementChild.remove();
+  cardHoles--;
+  syncHoleBtn();
+}
+function syncHoleBtn(){
+  const b = el('rf_delhole');
+  if (!b) return;
+  b.style.display = cardHoles > BASE_HOLES ? '' : 'none';
+  b.textContent = `− Remove hole ${cardHoles}`;
+}
+
+function editRound(id){
+  editId=id;
+  const r=ROUNDS.find(x=>x.id===id);
+  // Reopen a 20-hole card with 20 boxes, not 18 — otherwise editing it would
+  // silently truncate the extra holes on the next save.
+  cardHoles = Math.max(BASE_HOLES, ((r&&r.holes_data)||[]).length);
+  roundMode = (r&&r.is_simple)?'simple':'manual';
+  renderRounds();
+}
 
 function fillFormFromRound(){
   const r = ROUNDS.find(x=>x.id===editId);
@@ -1598,6 +1664,7 @@ function fillFormFromRound(){
       document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===r.takeaway)); }
     if(el('rf_co'))el('rf_co').checked=!!r.comp;
     if(el('rf_pr'))el('rf_pr').checked=!!r.practice;
+    if(el('rf_mp'))el('rf_mp').checked=!!r.matchplay;
     toggleFocus('rf'); setFoci('rf', r.practice_focus);
     if(el('rf_drill'))el('rf_drill').value=r.practice_drill||'';
     (r.holes_data||[]).forEach((hd,i)=>{
@@ -1768,7 +1835,7 @@ async function saveSimpleRound(){
 async function saveCardRound(){
   const d=gv('rf_d');
   if(!d){ toast('Pick a date'); return; }
-  const holes_data=Array.from({length:18},(_,i)=>({
+  const holes_data=Array.from({length:cardHoles},(_,i)=>({
     par:   el('hp_'+i)?el('hp_'+i).value:'',
     score: el('hs_'+i)?el('hs_'+i).value:'',
     drive: el('hdrive_'+i)?el('hdrive_'+i).value.trim().toLowerCase():'',
@@ -1789,7 +1856,8 @@ async function saveCardRound(){
   await saveRoundRow({ ...tk,
     date:d, course:gv('rf_c')||null, comp:el('rf_co').checked, practice:el('rf_pr').checked,
     practice_focus:getFoci('rf'), practice_drill:(el('rf_drill')?el('rf_drill').value.trim():'')||null,
-    notes:gv('rf_n')||null, holes_data, is_simple:false, holes:18,
+    notes:gv('rf_n')||null, holes_data, is_simple:false, holes:cardHoles,
+    matchplay:el('rf_mp')?el('rf_mp').checked:false,
   });
 }
 async function toggleExcluded(id){
@@ -1917,7 +1985,9 @@ function fillFromScan(d){
   toggleFocus('rf');
   (d.holes||[]).forEach(h=>{
     const i=h.hole!=null?Number(h.hole)-1:null;
-    if(i==null||i<0||i>17) return;
+    // Respect however many holes the card is currently showing, rather than a
+    // hardcoded 18 — a scan taken after adding extra holes should fill them.
+    if(i==null||i<0||i>=cardHoles) return;
     if(el('hp_'+i))    el('hp_'+i).value    = h.par!=null?h.par:'';
     if(el('hs_'+i))    el('hs_'+i).value    = h.score!=null?h.score:'';
     if(el('hdrive_'+i))el('hdrive_'+i).value= h.drive||'';
