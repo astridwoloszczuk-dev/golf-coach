@@ -1062,8 +1062,12 @@ function toggleRoundDetail(id){
 }
 
 function roundDetailHtml(r){
-  const hd = (r.holes_data||[]).map((h,i)=>({...h, no:i+1}))
+  // Running state is computed over the FULL card, then attached, then filtered —
+  // work it out after filtering and a dropped hole silently shifts the whole line.
+  const prog = matchProgress(r.holes_data);
+  const hd = (r.holes_data||[]).map((h,i)=>({...h, no:i+1, _st:prog[i]}))
                                .filter(h => String(h.score??'')!=='' || String(h.par??'')!=='');
+  const isMatch = !!r.matchplay || (r.holes_data||[]).some(h => String(h&&h.mp||'').trim()!=='');
   if (!hd.length)
     return `<div class="empty" style="padding:10px 0 2px">${r.is_simple
       ? 'Logged without a scorecard — no hole detail.'
@@ -1077,7 +1081,8 @@ function roundDetailHtml(r){
       <thead><tr style="color:var(--mu);text-transform:uppercase;letter-spacing:.6px;font-size:9px">
         <th style="${cell};text-align:left">Hole</th><th style="${cell}">Par</th><th style="${cell}">Score</th>
         <th style="${cell}">GIR</th><th style="${cell}">Drive</th><th style="${cell}">App</th>
-        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th><th style="${cell}">Cmt</th>
+        <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th>${
+          isMatch?`<th style="${cell}">Match</th>`:''}<th style="${cell}">Cmt</th>
       </tr></thead><tbody>
       ${hd.map(h=>{
         const p=Number(h.par), s=Number(h.score);
@@ -1095,6 +1100,9 @@ function roundDetailHtml(r){
           <td style="${cell}">${mark(h.trbl)}</td>
           <td style="${cell};font-weight:700;color:${h.mp==='+'?'var(--gn)':h.mp==='-'?'var(--rd)':'var(--mu)'}">${
             h.mp==='=' ? '\u00bd' : (h.mp || '<span style="color:var(--b1)">\u00b7</span>')}</td>
+          ${isMatch?`<td style="${cell};font-weight:700;color:${
+            h._st==null?'var(--b1)':h._st>0?'var(--gn)':h._st<0?'var(--rd)':'var(--mu)'}">${
+            h._st==null?'\u00b7':esc(matchStateLabel(h._st))}</td>`:''}
           <td style="${cell};color:${h.cmt?'var(--rd)':'var(--b1)'}">${h.cmt?'●'.repeat(Math.min(5,Number(h.cmt))):'·'}</td>
         </tr>`;
       }).join('')}
@@ -1483,6 +1491,26 @@ function ordinalHole(n){
   const s = ['th','st','nd','rd'], v = n % 100;
   return n + (s[(v-20)%10] || s[v] || s[0]);
 }
+
+/* THE RUNNING STATE, hole by hole — her question, 11 Aug, and a better one than
+   the column she was looking at: "did I go 3 down and catch up, or was it up
+   down up down, or all halves?" A column of + and − marks cannot answer that
+   without twenty steps of mental arithmetic. The running total answers it by
+   being read straight down.
+
+   Returns one entry per hole aligned with holes_data, null where the hole has no
+   mark, so it can be attached BEFORE any filtering and stay correct. */
+function matchProgress(hd){
+  let up = 0;
+  return (hd || []).map(h => {
+    const m = String(h && h.mp || '').trim();
+    if (m === '+') up++;
+    else if (m === '-' || m === '−') up--;
+    else if (m === '') return null;
+    return up;
+  });
+}
+const matchStateLabel = u => u === 0 ? 'AS' : Math.abs(u) + (u > 0 ? '↑' : '↓');
 
 function matchResult(hd){
   const rows = (hd||[]).map((h,i)=>({i:i+1, m:String(h && h.mp || '').trim()}))
@@ -2780,22 +2808,42 @@ function cumScorecardHtml(rounds){
      So this is just every played hole, in order, in the same shape as the
      card you get by opening a single round - with the round it came from in
      the left column, and the totals on top. 36 holes played, 36 rows. */
+  /* A HOLE WITH NO SCORE STILL HAPPENED. Until 11 Aug this dropped any hole
+     without a score, so her 20-hole match showed 17 rows and the three holes
+     that were never holed out simply vanished — two of which she WON, her
+     opponent having picked up. Wes reads this page with less context than she
+     has; holes missing from the middle of a match with no explanation are worse
+     than useless.
+
+     So they are rows now, with a dash where the score would be and their MP mark
+     beside it, which is exactly the explanation that was missing. Her rule, and
+     the right one: they SHOW, and they do nothing whatsoever to the tiles.
+     Every statistic above still runs on holed-out holes only, so no percentage
+     moves and no total shifts because a hole was conceded.
+
+     A hole with a par and NEITHER a score nor an MP mark is a hole she chose not
+     to fill in — that stays out, as before. */
   const holes = [];
   for (const r of rounds){
     (r.holes_data || []).forEach((h, i) => {
-      if (String(h.par == null ? '' : h.par) === '' || String(h.score == null ? '' : h.score) === '') return;
-      holes.push({...h, no: i + 1, date: r.date, course: r.course});
+      const par = String(h.par == null ? '' : h.par).trim();
+      const sc  = String(h.score == null ? '' : h.score).trim();
+      const mp  = String(h.mp == null ? '' : h.mp).trim();
+      if (par === '' || (sc === '' && mp === '')) return;
+      holes.push({...h, no: i + 1, date: r.date, course: r.course, _scored: sc !== ''});
     });
   }
   if (!holes.length) return `<div class="empty">No hole-by-hole data in these rounds.</div>`;
 
+  // EVERY statistic below reads `scored`, never `holes`.
+  const scored = holes.filter(h => h._scored);
   const lc = k => h => String(h[k] || '').toLowerCase();
-  const pc = f => Math.round(holes.filter(f).length * 100 / holes.length);
-  const tot = k => holes.reduce((a, h) => a + Number(h[k] || 0), 0);
-  const delta = holes.reduce((a, h) => a + (Number(h.score) - Number(h.par)), 0);
+  const pc = f => scored.length ? Math.round(scored.filter(f).length * 100 / scored.length) : 0;
+  const tot = k => scored.reduce((a, h) => a + Number(h[k] || 0), 0);
+  const delta = scored.reduce((a, h) => a + (Number(h.score) - Number(h.par)), 0);
 
   const tiles = [
-    ['Holes',  holes.length, null],
+    ['Holes',  scored.length, null],
     ['vs par', (delta > 0 ? '+' : '') + delta, delta <= 0],
     ['GIR',    pc(h => h.gir) + '%', pc(h => h.gir) >= 50],
     ['In position', pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0 && lc('short')(h) !== 'c') + '%',
@@ -2822,8 +2870,9 @@ function cumScorecardHtml(rounds){
         <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th><th style="${cell}">Cmt</th></tr>
       </thead><tbody>
       ${holes.map((h, i) => {
-        const d = Number(h.score) - Number(h.par);
-        const col = d <= -1 ? 'var(--gn)' : d === 0 ? 'var(--tx)' : d === 1 ? 'var(--tx)' : 'var(--rd)';
+        const d = h._scored ? Number(h.score) - Number(h.par) : null;
+        const col = d === null ? 'var(--mu)'
+                  : d <= -1 ? 'var(--gn)' : d === 0 ? 'var(--tx)' : d === 1 ? 'var(--tx)' : 'var(--rd)';
         const newRound = i === 0 || holes[i-1].date !== h.date || holes[i-1].course !== h.course;
         return `<tr style="border-top:1px solid ${newRound ? 'var(--b2)' : 'var(--b1)'}">
           <td style="${cell};text-align:left;color:var(--mu);font-size:10px">${
