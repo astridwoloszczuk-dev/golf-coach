@@ -94,8 +94,30 @@ const GOAL_METRICS = {
        source, properly, so the workaround goes.
 
        Her two Fontana days are a two-day medal ranking tournament and count as
-       two. St Pölten and Herzog were matchplay and count as none. That gives 2,
-       which is what she said it was before any of this was computed. */
+       two. St Pölten and Herzog were matchplay and count as none.
+
+       ROUNDS, NOT EVENTS — confirmed by her 13 Aug: three two-day events would
+       satisfy the goal, because two days away is genuinely more of the thing
+       being asked for than one.
+
+       NO COMPLETENESS TEST, on purpose, and unlike counting_avg. A nine-hole
+       away comp counts as a whole one: entering the only event on offer is the
+       same decision as entering a big one, and this goal measures the decision.
+
+       RATE = 1/MONTH, cut from 1.5 on 13 Aug. Her objection was not that the
+       goal was hard but that it was arithmetically impossible: 1.5 a month sat
+       ON TOP of 8-12 away matchplay rounds, and the away weekends are a fixed
+       budget — one non-matchplay weekend a month, negotiated with Niko. So the
+       team load is not a reason to COUNT matchplay (a fixture is not an entry,
+       and counting them would make this green by description). It is the reason
+       the individual rate belongs at 1. Same constraint, applied where it bites.
+
+       This is her ceiling, so green means "used every slot", not "did more".
+       That is deliberate: pro-rata within the month, an unused slot drifts the
+       tile amber around the 10th and back to green when she enters something —
+       which is the nudge the goal exists to give. Red needs a whole month lost.
+       The cost of a ceiling is that one missed month cannot be made up: 5 of 6
+       finishes the season amber. She should know that going in. */
     const yr = new Date().getFullYear();
     const inSeason = d => { const m = Number(d.slice(5,7)); return m >= 5 && m <= 10; };
     const rounds = R.filter(r => r.comp && !r.stats_excluded && !r.matchplay
@@ -104,9 +126,13 @@ const GOAL_METRICS = {
     const now = new Date();
     const monthsIn = Math.min(6, Math.max(0, (Math.min(10, now.getMonth()+1) - 5) + now.getDate()/30));
     if (monthsIn < 0.5) return {txt:'season not started', state:null};
-    const due = 1.5 * monthsIn;
+    const due = 1.0 * monthsIn;
     const ratio = due ? rounds/due : 1;
-    return {val: rounds, txt: `${rounds} away round${rounds===1?'':'s'} · ${due.toFixed(0)} due`,
+    /* ONE DECIMAL on `due`, not zero. At 1.5/month the rounding was invisible;
+       at 1/month it is not — on 13 Aug the pace is 3.4 and she is on 3, which
+       rounded to "3 away rounds · 3 due" and then coloured itself amber. A tile
+       that contradicts its own colour teaches her to ignore the colour. */
+    return {val: rounds, txt: `${rounds} away round${rounds===1?'':'s'} · ${due.toFixed(1)} due`,
             state: ratio >= 0.9 ? 'good' : ratio >= 0.6 ? 'warn' : 'bad'};
   },
 
@@ -133,11 +159,19 @@ const GOAL_METRICS = {
             state: pct >= 90 ? 'good' : pct >= 70 ? 'warn' : 'bad'};
   },
 
-  /* Scramble: up-and-downs as a share of greens missed. Exactly the number she
-     asked for — it combines the `c` marks with the saves actually made, since
-     scrambling well and collecting c's are the same axis. Competition 15%,
-     social 25%. Good amateurs run 30-40%, so 30 is the target and 20 the floor;
-     this is her single biggest scoring leak. */
+  /* Scramble: up-and-downs as a share of greens missed. Competition 15%, social
+     25%. Good amateurs run 30-40%, so 30 is the target and 20 the floor; this is
+     her single biggest scoring leak.
+
+     THE GOAL WAS RENAMED 13 Aug (migration 21) from "Fewer choked saves" to
+     "Higher scramble rate", because the old title claimed something this does
+     not do: a `c` never enters the calculation. A save counts when the score is
+     par or better off a missed green, full stop. Both inputs — `gir` and score
+     against par — are objective, so this number survives the 11 Aug tightening
+     of the fault codes intact, which the judgement columns do not.
+
+     Competition only, by design: her comp/social split IS the goal, and
+     averaging the two would dissolve exactly the gap she is trying to close. */
   scramble(R){
     let missed = 0, ud = 0;
     for (const r of R){
