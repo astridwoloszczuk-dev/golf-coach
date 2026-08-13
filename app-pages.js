@@ -1302,6 +1302,17 @@ function resetRounds(){ roundMode='select'; editId=null; scanFiles=[null,null]; 
 function setRoundMode(m){ roundMode = m; editId = null; cardHoles = BASE_HOLES; renderRounds(); }
 function cancelRound(){ roundMode='select'; editId=null; cardHoles=BASE_HOLES; scanFiles=[null,null]; scanPreviews=[null,null]; renderRounds(); }
 
+/* IN POSITION — ONE definition, exported here because there were two.
+
+   The rule and the tile that shows it had each grown their own copy of this
+   predicate, identical by luck rather than by construction. Changing the rule
+   below meant changing it twice or watching the summary tile disagree with the
+   round, so it lives here once now. */
+const inPosition = h => {
+  const ap = String(h.app||'').toLowerCase(), sh = String(h.short||'').toLowerCase();
+  return ap !== 'x' && sh !== 'c';
+};
+
 /* ── stats (verbatim logic from the tracker) ─────────────────── */
 function deriveRoundStats(hd){
   const Z={n:0,delta:null,gir:null,fw:null,ud:null,p3:null,db:null,b5:null,pen:null,bs:null,
@@ -1383,8 +1394,37 @@ function deriveRoundStats(hd){
        COMPUTED PER HOLE, NOT BY COUNTING MARKS. A hole can carry both an `m`
        and a `c` — miss the quadrant with a wedge, then chip badly — and
        subtracting mark counts would punish that hole twice and can drive the
-       figure below zero on a bad enough round. */
-    o.posHit = played.filter(h => ['m','x','w'].indexOf(ap(h)) < 0 && sh(h) !== 'c').length;
+       figure below zero on a bad enough round.
+
+       ── `m` REMOVED FROM THE RULE, 13 Aug. Her find, and it is a real one.
+
+       The 5 Aug fix added `c` so that long approaches could still carry a
+       fault. It only went one way: it made the FAULT reachable on a long hole
+       but never made the RECOVERY count on a short one. So two holes with an
+       identical outcome — green missed, chip to six feet, putt for par sitting
+       there — were scored differently purely by which club had missed:
+
+         6i, green missed, good chip .... blank + blank .... in position
+         9i, quadrant missed, good chip .... m + blank .... NOT in position
+
+       There is no defending that. The second hole gave her exactly the same
+       realistic chance at par, and the metric said otherwise because of the
+       club in her hands. Her words, 13 Aug: blank the approach, `c` the chip,
+       miss the putt — that is the chip's fault; good chip then two putts — she
+       WAS in position and putted badly.
+
+       So the question this answers is now the one it always claimed to: did the
+       hole offer a realistic putt at par. Only two things say no — `x` (dead,
+       no chance existed) and `c` (the recovery failed to leave one). A missed
+       quadrant is a loose approach, not a lost hole, and it is not lost from
+       the app either: `quadPct` below is exactly that view, which is why this
+       is a subtraction and not a trade.
+
+       NOT A LOOSENING OF `c`. She was explicit that she is not trying to make
+       the code easier — `c` stays "the chip did not leave a makeable putt",
+       roughly outside 6-9ft. What changed is that a good chip is now allowed
+       to rescue the hole, which is what a good chip does. */
+    o.posHit = played.filter(inPosition).length;
     o.posPct = n ? Math.round(o.posHit * 100 / n) : null;
     // kept as the approach-only view, for when the question is specifically
     // about the approach rather than about reaching a scoring position
@@ -2871,7 +2911,6 @@ function cumScorecardHtml(rounds){
 
   // EVERY statistic below reads `scored`, never `holes`.
   const scored = holes.filter(h => h._scored);
-  const lc = k => h => String(h[k] || '').toLowerCase();
   const pc = f => scored.length ? Math.round(scored.filter(f).length * 100 / scored.length) : 0;
   const tot = k => scored.reduce((a, h) => a + Number(h[k] || 0), 0);
   const delta = scored.reduce((a, h) => a + (Number(h.score) - Number(h.par)), 0);
@@ -2880,8 +2919,7 @@ function cumScorecardHtml(rounds){
     ['Holes',  scored.length, null],
     ['vs par', (delta > 0 ? '+' : '') + delta, delta <= 0],
     ['GIR',    pc(h => h.gir) + '%', pc(h => h.gir) >= 50],
-    ['In position', pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0 && lc('short')(h) !== 'c') + '%',
-                    pc(h => ['m','x','w'].indexOf(lc('app')(h)) < 0 && lc('short')(h) !== 'c') >= 60],
+    ['In position', pc(inPosition) + '%', pc(inPosition) >= 60],
     ['Putts',  tot('putts') || '\u00b7', null],
   ];
   const cell = 'padding:3px 5px;text-align:center;white-space:nowrap';
@@ -3234,7 +3272,7 @@ async function renderSummary(){
   h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
       wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">In position ${wkQuad}%</span>`:''}</div>`;
   if (wkQuad!=null && (wkComp!=null||wkSoc!=null))
-    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Holes reaching a realistic scoring position · ${
+    h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Holes that offered a realistic putt at par · ${
       [wkSoc!=null?`social ${wkSoc}%`:null, wkComp!=null?`comp ${wkComp}%`:null].filter(Boolean).join(' · ')
     }${(wkComp!=null&&wkSoc!=null)?` · <b style="color:${wkSoc-wkComp>10?'var(--rd)':'var(--tx)'}">gap ${wkSoc-wkComp>0?'-':'+'}${Math.abs(wkSoc-wkComp)}</b> under a card`:''}</div>`;
   if (!(rounds||[]).filter(r=>r.date >= wk && r.date <= wkEnd).length)
