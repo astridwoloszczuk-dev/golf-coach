@@ -692,14 +692,18 @@ async function renderWeek(){
    not a scoring rule. Ticking both comp and practice resolves to comp, because
    a competition is the more load-bearing fact about the day.
 
-   Hole count comes from getRoundStats, so a card round reports the holes it
-   actually has scores for and a simple round reports what she typed — a
-   nine-hole card says 9 without anyone maintaining a second field. */
+   HOLES PLAYED, NOT HOLES SCORED — holesPlayed, not getRoundStats. Her Monday
+   matchplay went 20 holes and first showed 17, because three were conceded and
+   a conceded hole carries an MP mark and no score. The pill answers "did I go
+   out, and for how long"; how many of those holes were holed out belongs on the
+   Rounds page, and rides along in the tooltip. */
 function roundPillHtml(r){
   const kind  = (r.comp || r.matchplay) ? 'comp' : r.practice ? 'prac' : 'social';
   const label = kind === 'comp' ? 'Comp' : kind === 'prac' ? 'Practice' : 'Social';
-  const holes = getRoundStats(r).holes;
-  return `<span class="rpill ${kind}" onclick="event.stopPropagation()" title="${label} · ${holes} holes">
+  const s = getRoundStats(r), holes = holesPlayed(r, s);
+  const tip = label + ' · ' + holes + ' holes'
+            + (s.n && s.n < holes ? ' · ' + s.n + ' holed out' : '');
+  return `<span class="rpill ${kind}" onclick="event.stopPropagation()" title="${esc(tip)}">
     <span>${label}</span><span class="h">${holes}</span>
   </span>`;
 }
@@ -1649,11 +1653,28 @@ function matchResult(hd){
                   : { won: up > 0, txt: (up > 0 ? 'Won ' : 'Lost ') + Math.abs(up) + ' up' };
 }
 
+/* HOLES SHE PLAYED — the number she would say out loud, which is NOT the number
+   of holes carrying a score. A conceded matchplay hole gets an MP mark and no
+   score on purpose (never a guess), so a 20-hole match with three concessions
+   has 17 scores. `holes` is written by both round forms — cardHoles for a card,
+   the typed figure for a simple round — so it is the honest answer; the derived
+   counts are the fallbacks for older rows that predate it.
+
+   EXTRACTED 14 Aug because the week-grid pill went straight to
+   getRoundStats().holes and reported her Monday 20-hole match as 17. That count
+   is the STATS denominator and is correctly score-only — you cannot score a
+   hole nobody holed out. Two different questions that had been answered by one
+   number; now there is a function for each, and the pill calls this one. */
+function holesPlayed(r, s){
+  const hd = r.holes_data || [];
+  return Number(r.holes) || (s || getRoundStats(r)).n || hd.length || 0;
+}
+
 /* "20 holes · 17 scored" beats "17 holes" whenever the two differ — including
    the ordinary case of a card she chose not to fill in completely. */
 function holesSummary(r, s){
   const hd = r.holes_data || [];
-  const played = Number(r.holes) || s.n || hd.length || 0;
+  const played = holesPlayed(r, s);
   if (!played) return { label:'? holes', title:'' };
   if (!s.n || s.n >= played) return { label: played + ' holes', title:'' };
 
