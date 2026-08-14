@@ -140,6 +140,26 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .pill.sel{outline:2px solid var(--ac);outline-offset:1px}
 .pill .sc{font-size:11px;font-weight:700;color:var(--ac)}
 .pill.drag{position:fixed;z-index:500;pointer-events:none;opacity:.94;box-shadow:0 8px 24px rgba(0,0,0,.55);cursor:grabbing}
+/* ROUNDS PLAYED, on the week grid (14 Aug). She looks BACKWARDS on this page as
+   well as forwards, and had to leave it for the Rounds page to see whether she
+   actually played. These are read-only: not draggable, not tappable, no author.
+
+   DELIBERATELY A DIFFERENT SHAPE, not just a different hue. Assignment pills
+   already spend their BORDER COLOUR on authorship — blue Wes, amber Claude,
+   lilac hers — so a blue-ringed round would have read as "Wes set this". Rounds
+   are squared-off (7px) against the assignments' 999px capsule, so plan and
+   record separate at a glance before colour is decoded at all.
+
+   Colour then says FORMAT, reusing what the app already means elsewhere: blue
+   Comp (the .bi badge), green Practice (the .bp badge). Social is the only new
+   one and takes the house gold. */
+.rpill{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:6px 10px;border-radius:7px;
+  font-size:12px;font-weight:600;border:1px solid transparent;cursor:default;
+  -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.rpill .h{font-weight:600;opacity:.72;font-variant-numeric:tabular-nums}
+.rpill.comp  {background:rgba(96,165,250,.16); color:var(--bl); border-color:rgba(96,165,250,.38)}
+.rpill.social{background:rgba(200,169,110,.16);color:var(--ac); border-color:rgba(200,169,110,.38)}
+.rpill.prac  {background:rgba(74,222,128,.16); color:var(--gn); border-color:rgba(74,222,128,.38)}
 .tray{background:var(--s2);border:1px dashed var(--b2);border-radius:11px;padding:11px;margin-top:14px}
 .tray.drop{border-color:var(--ac);background:rgba(200,169,110,.10)}
 .tray .ct{margin-bottom:8px}
@@ -834,6 +854,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260814-1"></script>
+<script src="app-pages.js?v=20260814-2"></script>
 </body>
 </html>

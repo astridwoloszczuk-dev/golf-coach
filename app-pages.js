@@ -614,12 +614,23 @@ async function renderWeek(){
   // Last week's row too: question 3 is a commitment, and a commitment nobody
   // reads back is a wish. It is shown above this week's answers.
   const prevWk = ymd(addDays(WEEK,-7));
-  [ASSIGN, SUBS, REFL] = await Promise.all([
+  /* Rounds actually played, for the record half of the page. selSoft because a
+     week grid that renders without them is still useful, whereas one that fails
+     to render because the rounds table hiccuped is not — the plan is the
+     page's job, the record is the bonus.
+
+     NOTHING IS BACKFILLED. Rounds already carry their own date, so every past
+     week populates itself the moment this renders; there was no migration to
+     run and no second copy of the data to keep in step. */
+  let wkRounds;
+  [ASSIGN, SUBS, REFL, wkRounds] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category,description,scoring_hint,created_by)&week_start=eq.${wk}&order=sort.asc,id.asc`),
     sel('week_submissions', `select=id,submitted_at&week_start=eq.${wk}&order=submitted_at.asc`),
     selSoft('week_reflections', `select=*&week_start=in.(${wk},${prevWk})`),
+    selSoft('golf_rounds', `select=id,date,comp,matchplay,practice,is_simple,holes,holes_data`
+      + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
   ]);
-  ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || [];
+  ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || []; wkRounds = wkRounds || [];
   selectedAid = null;
 
   const tray = ASSIGN.filter(a => a.day_index == null);
@@ -637,10 +648,15 @@ async function renderWeek(){
 
   h += `<div class="wkgrid">`;
   for (const d of weekDays()){
-    const items = placed.filter(a => a.day_index === d.i);
+    const items  = placed.filter(a => a.day_index === d.i);
+    // Rounds sit on their OWN date — her call, and it keeps the record honest:
+    // a drill can be moved to the day she means to do it, a round happened when
+    // it happened and nothing should be able to shift it.
+    const rounds = wkRounds.filter(r => r.date === d.ymd);
+    const cells  = items.map(pillHtml).join('') + rounds.map(roundPillHtml).join('');
     h += `<div class="day ${d.isToday?'today':''}" data-drop="${d.i}" onclick="dayTapped(${d.i})">
       <div class="day-h"><b>${d.long}</b><span>${fmtDay(d.d)}${d.isToday?' · today':''}</span></div>
-      <div class="pills">${items.map(pillHtml).join('') || '<span class="empty" style="padding:0;font-size:12px">—</span>'}</div>
+      <div class="pills">${cells || '<span class="empty" style="padding:0;font-size:12px">—</span>'}</div>
     </div>`;
   }
   h += `</div>`;
@@ -664,6 +680,28 @@ async function renderWeek(){
   el('pg-week').innerHTML = h;
   wireDrag(el('pg-week'));
   loadWeekNote();
+}
+
+/* A ROUND SHE PLAYED. Read-only by construction: no data-aid, so wireDrag never
+   picks it up, and the click is swallowed so tapping one cannot fire the day's
+   place-the-selected-drill handler.
+
+   FORMAT PRECEDENCE — comp, then practice, then social. Matchplay counts as
+   comp (her call, 14 Aug), which also means a matchplay round shows here even
+   though the away-comps goal excludes it: this page reports what she did, it is
+   not a scoring rule. Ticking both comp and practice resolves to comp, because
+   a competition is the more load-bearing fact about the day.
+
+   Hole count comes from getRoundStats, so a card round reports the holes it
+   actually has scores for and a simple round reports what she typed — a
+   nine-hole card says 9 without anyone maintaining a second field. */
+function roundPillHtml(r){
+  const kind  = (r.comp || r.matchplay) ? 'comp' : r.practice ? 'prac' : 'social';
+  const label = kind === 'comp' ? 'Comp' : kind === 'prac' ? 'Practice' : 'Social';
+  const holes = getRoundStats(r).holes;
+  return `<span class="rpill ${kind}" onclick="event.stopPropagation()" title="${label} · ${holes} holes">
+    <span>${label}</span><span class="h">${holes}</span>
+  </span>`;
 }
 
 function pillHtml(a){
