@@ -2087,7 +2087,13 @@ function saveAnthKey(){ const k=gv('ank'); if(k){ localStorage.setItem('anthropi
 function resizeForApi(dataUrl,cb){
   const img=new Image();
   img.onload=()=>{
-    const MAX=1400; let w=img.width,h=img.height;
+    /* 2576 = Sonnet 5's high-resolution ceiling on the long edge, raised from
+       1400 on 14 Aug with the model swap. 1400 was correct for Haiku 4.5, which
+       caps at 1568 and would have downscaled anything larger itself. Do not
+       raise this further: past 2576 the API downscales and the extra bytes are
+       uploaded for nothing. The 4.7MB guard below is the base64 request cap and
+       still applies — quality steps down before size does. */
+    const MAX=2576; let w=img.width,h=img.height;
     const s=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
     const c=document.createElement('canvas'); c.width=w; c.height=h;
     c.getContext('2d').drawImage(img,0,0,w,h);
@@ -2145,15 +2151,38 @@ Also extract: date ("YYYY-MM-DD" or null), course (or null), comp (true/false), 
 Return ONLY valid JSON, no markdown:
 {"date":null,"course":null,"comp":false,"practice":false,"notes":null,"holes":[{"hole":1,"par":4,"score":5,"drive":"","gir":false,"app":"m","short":"","putts":2,"trbl":""}]}`});
 
+  /* SONNET 5, 14 Aug — was claude-haiku-4-5. Her call: Haiku was not reading the
+     handwriting well enough, and she checks every scanned card against the paper
+     anyway, so the cost of a misread is her time rather than bad data. Three
+     things had to move together, and the model string was the least of them:
+
+     1. HIGH-RESOLUTION VISION. Haiku caps at 1568px on the long edge, so the
+        uploader downscaled to 1400 (see resizeForApi). Sonnet 5 takes 2576.
+        A scorecard is ~180 small handwritten cells in a dense grid — resolution
+        is doing more work here than model capability. Raising the cap without
+        changing the model would have helped on its own.
+     2. THINKING IS ON BY DEFAULT. Omitting `thinking` meant no thinking on
+        Haiku; on Sonnet 5 it runs adaptive. Left on deliberately — deciding
+        whether a smudge is a c or a tick is exactly the judgement it buys.
+     3. max_tokens NOW COVERS THINKING TOO, so 2048 would truncate the JSON
+        mid-card. 8000 leaves room for both.
+
+     If a scan ever feels slow, `output_config:{effort:'medium'}` is the dial;
+     the default is high and this is a transcription task, not a reasoning one. */
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json',
              'anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2048,messages:[{role:'user',content}]}),
+    body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,messages:[{role:'user',content}]}),
   });
   if(!resp.ok){ const e=await resp.json().catch(()=>({})); throw new Error((e.error&&e.error.message)||('HTTP '+resp.status)); }
   const data=await resp.json();
-  let raw=data.content[0].text.trim();
+  /* FIND THE TEXT BLOCK, don't assume it is first. With thinking on, content[0]
+     is a thinking block — and its text is EMPTY by default, so the old
+     `content[0].text.trim()` threw on a response that was perfectly fine. */
+  const textBlock=(data.content||[]).find(b=>b.type==='text');
+  if(!textBlock) throw new Error('No text in the reply (stopped: '+(data.stop_reason||'unknown')+')');
+  let raw=textBlock.text.trim();
   if(raw.startsWith('```')) raw=raw.split('\n').slice(1,-1).join('\n');
   return JSON.parse(raw);
 }
