@@ -686,11 +686,19 @@ async function renderWeek(){
    picks it up, and the click is swallowed so tapping one cannot fire the day's
    place-the-selected-drill handler.
 
-   FORMAT PRECEDENCE — comp, then practice, then social. Matchplay counts as
-   comp (her call, 14 Aug), which also means a matchplay round shows here even
-   though the away-comps goal excludes it: this page reports what she did, it is
-   not a scoring rule. Ticking both comp and practice resolves to comp, because
-   a competition is the more load-bearing fact about the day.
+   FORMAT PRECEDENCE — comp, then practice, then social, read off the
+   Competitive tick alone.
+
+   MATCHPLAY IS A FORMAT, NOT A STATUS, and the two checkboxes on the round form
+   have always been independent. This first read `comp || matchplay`, which
+   over-applied her 14 Aug answer: asked whether matchplay deserved its own
+   colour she said no, put it with comp — a statement about the palette that I
+   turned into a rule overriding her explicit "not competitive" tick. Her 15 Aug
+   friendly match came back blue because of it. A club match she enters as
+   Competitive is still Comp; a friendly is Social, which is what she ticked.
+
+   Ticking both Competitive and practice resolves to comp — a competition is the
+   more load-bearing fact about the day.
 
    HOLES PLAYED, NOT HOLES SCORED — holesPlayed, not getRoundStats. Her Monday
    matchplay went 20 holes and first showed 17, because three were conceded and
@@ -698,9 +706,9 @@ async function renderWeek(){
    out, and for how long"; how many of those holes were holed out belongs on the
    Rounds page, and rides along in the tooltip. */
 function roundPillHtml(r){
-  const kind  = (r.comp || r.matchplay) ? 'comp' : r.practice ? 'prac' : 'social';
+  const kind  = r.comp ? 'comp' : r.practice ? 'prac' : 'social';
   const label = kind === 'comp' ? 'Comp' : kind === 'prac' ? 'Practice' : 'Social';
-  const s = getRoundStats(r), holes = holesPlayed(r, s);
+  const s = getRoundStats(r), holes = holesPlayed(r);
   const tip = label + ' · ' + holes + ' holes'
             + (s.n && s.n < holes ? ' · ' + s.n + ' holed out' : '');
   return `<span class="rpill ${kind}" onclick="event.stopPropagation()" title="${esc(tip)}">
@@ -1653,28 +1661,36 @@ function matchResult(hd){
                   : { won: up > 0, txt: (up > 0 ? 'Won ' : 'Lost ') + Math.abs(up) + ' up' };
 }
 
-/* HOLES SHE PLAYED — the number she would say out loud, which is NOT the number
-   of holes carrying a score. A conceded matchplay hole gets an MP mark and no
-   score on purpose (never a guess), so a 20-hole match with three concessions
-   has 17 scores. `holes` is written by both round forms — cardHoles for a card,
-   the typed figure for a simple round — so it is the honest answer; the derived
-   counts are the fallbacks for older rows that predate it.
+/* HOLES SHE PLAYED — the number she would say out loud.
 
-   EXTRACTED 14 Aug because the week-grid pill went straight to
-   getRoundStats().holes and reported her Monday 20-hole match as 17. That count
-   is the STATS denominator and is correctly score-only — you cannot score a
-   hole nobody holed out. Two different questions that had been answered by one
-   number; now there is a function for each, and the pill calls this one. */
-function holesPlayed(r, s){
+   COUNTED FROM EVIDENCE ON THE CARD, not from `holes`. That column is the CARD
+   LENGTH, not the round: the card form starts at 18 and removeHole refuses to
+   go below it, so every nine-hole round entered on a card is stored as
+   `holes: 18`. Reading it made her 13 Aug nine-holer report "18 holes, 9
+   scored" — a split that had no business existing, because she played nine.
+
+   A hole counts as played if it carries a SCORE **or** an MP MARK. That single
+   rule covers both shapes without a flag to set or a form to change:
+     stroke play — evidence is the score, so played == scored and no split can
+       appear, which is right: if she did not score it she did not play it.
+     matchplay  — a conceded hole is deliberately left scoreless and marked in
+       the MP column instead, so it still counts. Her 20-hole match stays 20.
+
+   `holes` survives only as the fallback for SIMPLE rounds, which carry no
+   holes_data and where the typed figure is the honest answer. */
+function holesPlayed(r){
   const hd = r.holes_data || [];
-  return Number(r.holes) || (s || getRoundStats(r)).n || hd.length || 0;
+  const evidence = hd.filter(h =>
+       String(h && h.score != null ? h.score : '').trim() !== ''
+    || String(h && h.mp    != null ? h.mp    : '').trim() !== '').length;
+  return evidence || Number(r.holes) || hd.length || 0;
 }
 
 /* "20 holes · 17 scored" beats "17 holes" whenever the two differ — including
    the ordinary case of a card she chose not to fill in completely. */
 function holesSummary(r, s){
   const hd = r.holes_data || [];
-  const played = holesPlayed(r, s);
+  const played = holesPlayed(r);
   if (!played) return { label:'? holes', title:'' };
   if (!s.n || s.n >= played) return { label: played + ' holes', title:'' };
 
