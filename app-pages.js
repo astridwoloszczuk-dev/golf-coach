@@ -550,21 +550,78 @@ let selectedAid = null;
    ──────────────────────────────────────────────────────────────── */
 const reflFor = wk => REFL.find(r => r.week_start === wk) || null;
 
+/* THE THREE QUESTIONS, in one place. They were written out three times — her
+   form, the teacher's card on this page, and the same card on the Weekly
+   Summary — and Wes's replies had to attach to all three, so a fourth copy was
+   the alternative to this. `k` is the column on week_reflections AND the value
+   stored in feedback.question; keeping them the same string means a reply can
+   never point at a question that does not exist. */
+const REFLECT_Q = [
+  {k:'felt_good',  lbl:'What felt good',          ask:'What felt good this week?'},
+  {k:'was_off',    lbl:'What was off',            ask:'What was off?'},
+  {k:'commitment', lbl:'Committing to next week', ask:'What are you committing to for next week?'},
+];
+
+/* Wes's replies for the week being viewed, keyed by question. Filled by
+   renderWeek and renderSummary; both pages read it through replyFor. */
+let QREPLIES = [];
+const replyFor = k => QREPLIES.find(x => x.question === k) || null;
+
+/* HIS WORDS UNDER HERS — blue, because blue is Wes everywhere else in the app
+   (the .fb-teacher rule, and the authorship ring on assignment pills). Shown to
+   both of them: she reads the answer, he sees what he already said. */
+function qReplyHtml(k){
+  const rep = replyFor(k);
+  if (!rep) return '';
+  return `<div class="qreply">
+    <div class="qreply-h">${esc(TEACHER_NAME)} replied</div>
+    <div class="qreply-b">${esc(rep.body)}</div></div>`;
+}
+
+/* HER WEEK, IN HER WORDS — the teacher's view of the reflection, and the only
+   copy of it. This card existed twice, hand-rolled on the Weekly Commitments
+   page and again on the Weekly Summary, which is why Wes could see her answers
+   on both but could not answer them on either.
+
+   ONE BOX PER QUESTION, per his ask (via her, 16 Aug): he wanted to reply where
+   the questions are rather than write one lump at the end. Each box holds her
+   answer, his reply once he leaves one, and the button to write or change it.
+
+   REPLY IS AVAILABLE WHEREVER THE CARD IS. She named the Summary page, and I am
+   deliberately not honouring that literally: this is now one component, and a
+   Reply button that appears on one screen and silently vanishes on the other
+   reads as a bug rather than as a rule. Nothing is lost — the reply lands in the
+   same row either way. */
+function herWordsHtml(r){
+  if (!r || !r.submitted_at) return `<div class="card"><div class="ct">Her week, in her words</div>
+    <div class="empty">Not written yet.</div></div>`;
+  const canReply = ME.role === 'teacher';
+  let h = `<div class="card"><div class="ct">Her week, in her words</div>`;
+  let any = false;
+  for (const q of REFLECT_Q){
+    const val = r[q.k];
+    if (!val) continue;                       // she skipped it; nothing to answer
+    any = true;
+    const rep = replyFor(q.k);
+    h += `<div class="qbox">
+      <div class="qbox-q">${q.lbl}</div>
+      <div class="qbox-a">${esc(val)}</div>
+      ${qReplyHtml(q.k)}
+      ${canReply ? `<div class="rbtns" style="margin-top:9px">
+        <button class="btn btns" onclick="replyToQ('${q.k}')">${rep ? '✎ Edit reply' : '↩ Reply'}</button>
+      </div>` : ''}
+    </div>`;
+  }
+  if (!any) h += `<div class="empty">Sent, but all three answers were left blank.</div>`;
+  return h + `</div>`;
+}
+
 function reflectionHtml(){
   const wk = ymd(WEEK), r = reflFor(wk), prev = reflFor(ymd(addDays(WEEK,-7)));
   const mine = ME.role === 'student';
   const v = (x) => esc((r && r[x]) || '');
 
-  if (!mine){
-    if (!r || !r.submitted_at) return `<div class="card"><div class="ct">Her week, in her words</div>
-      <div class="empty">Not written yet.</div></div>`;
-    const row = (lbl, val) => val ? `<div style="margin-bottom:11px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu);margin-bottom:3px">${lbl}</div>
-      <div style="font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(val)}</div></div>` : '';
-    return `<div class="card"><div class="ct">Her week, in her words</div>
-      ${row('What felt good', r.felt_good)}${row('What was off', r.was_off)}
-      ${row('Committing to next week', r.commitment)}</div>`;
-  }
+  if (!mine) return herWordsHtml(r);
 
   return `<div class="card"><div class="ct"><span>Reflect &amp; commit</span>${
       r && r.submitted_at ? '<span class="bp">sent</span>' : ''}</div>
@@ -574,17 +631,95 @@ function reflectionHtml(){
         Last week you committed to</div>
       <div style="font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(prev.commitment)}</div>
     </div>` : ''}
+    <!-- HIS REPLY SITS UNDER THE QUESTION IT ANSWERS, not in a comments block at
+         the foot of the card. The whole point of his ask was that an answer
+         belongs next to what it answers; collecting them at the bottom would
+         have rebuilt the lump he was trying to get away from. -->
     <div class="fr"><label>What felt good this week?</label>
-      <textarea id="rf_good" rows="2">${v('felt_good')}</textarea></div>
+      <textarea id="rf_good" rows="2">${v('felt_good')}</textarea>${qReplyHtml('felt_good')}</div>
     <div class="fr"><label>What was off?</label>
-      <textarea id="rf_off" rows="2">${v('was_off')}</textarea></div>
+      <textarea id="rf_off" rows="2">${v('was_off')}</textarea>${qReplyHtml('was_off')}</div>
     <div class="fr"><label>What are you committing to for next week?</label>
-      <textarea id="rf_com" rows="2" placeholder="One thing you'll own — not a target, a behaviour.">${v('commitment')}</textarea></div>
+      <textarea id="rf_com" rows="2" placeholder="One thing you'll own — not a target, a behaviour.">${v('commitment')}</textarea>${qReplyHtml('commitment')}</div>
     <div class="rbtns" style="margin-top:0">
       <button class="btn btnp btns" onclick="saveReflection(true)">${r && r.submitted_at ? 'Update' : 'Send to '+esc(TEACHER_NAME)}</button>
       <button class="btn btns" onclick="saveReflection(false)">Save draft</button></div>
     <p class="empty" style="font-size:11.5px">Goes out with Sunday's 16:00 digest, before he assigns — so what he sets answers what you said.</p>
   </div>`;
+}
+
+/* ── Wes replies to one question ──────────────────────────────────── */
+function replyToQ(k){
+  const q = REFLECT_Q.find(x => x.k === k); if (!q) return;
+  const r = reflFor(ymd(WEEK)) || {}, rep = replyFor(k);
+  openSheet(`
+    <div class="sheet-h"><b>${esc(q.lbl)} · ${esc(fmtRange(WEEK))}</b>
+      <button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="qbox" style="margin-bottom:12px">
+      <div class="qbox-q">She wrote</div>
+      <div class="qbox-a">${esc(r[k] || '')}</div></div>
+    <div class="fr"><textarea id="qr-body" rows="6" placeholder="Your answer to this one."></textarea></div>
+    <div class="rbtns">
+      <button class="btn btnp" onclick="saveReply('${k}')">${rep ? 'Update reply' : 'Send reply'}</button>
+      <button class="btn" onclick="closeSheet()">Cancel</button>
+      ${rep ? `<button class="btn btnd btns" onclick="deleteReply(${rep.id})">Delete</button>` : ''}
+    </div>`);
+  // Prefilled from what is already loaded — no second round trip to read back
+  // a body this page is already holding.
+  if (rep && el('qr-body')) el('qr-body').value = rep.body;
+}
+
+async function saveReply(k){
+  const body = (el('qr-body') ? el('qr-body').value : '').trim();
+  if (!body){ toast('Nothing to save'); return; }
+  const wk = ymd(WEEK), rep = replyFor(k);
+
+  if (rep){
+    await upd('feedback', 'id=eq.'+rep.id, {body, updated_at:new Date().toISOString()});
+    toast('Updated');                    // edits are silent, as general comments are
+  } else {
+    await ins('feedback', {student_id:STUDENT_ID, week_start:wk,
+                           author:'teacher', question:k, body});
+    /* ONE PING PER WEEK, not one per question. He will usually answer all three
+       in a sitting, and three Signal messages inside a minute is precisely how
+       the ntfy channel trained her to ignore it. The marker trick is the one
+       notifyNewComp already uses: the notification carries #R<week>, and its
+       presence is what makes the second and third replies silent.
+       Consequence worth knowing: a reply he adds days later will not ping
+       again. Her call to reverse if that bites. */
+    const tag  = '#R' + wk;
+    const seen = await selSoft('notifications',
+      'select=message&recipient=eq.' + encodeURIComponent(STUDENT_NAME)) || [];
+    if (seen.some(n => String(n.message||'').includes(tag))){
+      toast('Saved');
+    } else {
+      const sent = await notify(STUDENT_NAME,
+        `${TEACHER_NAME} has replied to your reflection for ${fmtRange(WEEK)}.`
+        + `\n\nIt's under each question on your Weekly Commitments page. ${tag}`);
+      toast(sent ? 'Sent — Astrid notified' : 'Saved');
+    }
+  }
+  closeSheet();
+  await refreshQReplies(wk);
+  CUR === 'summary' ? renderSummary() : renderWeek();
+}
+
+async function deleteReply(id){
+  if (!confirm('Delete this reply? She may already have read it.')) return;
+  await del('feedback', 'id=eq.'+id);
+  closeSheet();
+  const wk = ymd(WEEK);
+  await refreshQReplies(wk);
+  CUR === 'summary' ? renderSummary() : renderWeek();
+}
+
+/* Only the per-question rows. `question=not.is.null` matters as much as the
+   author filter: without it this would pull in the week's general comment and
+   render it under whichever question sorted first. */
+async function refreshQReplies(wk){
+  QREPLIES = await selSoft('feedback',
+    `select=id,question,body,author&week_start=eq.${wk}&author=eq.teacher`
+    + `&question=not.is.null&order=id.asc`) || [];
 }
 
 async function saveReflection(send){
@@ -631,6 +766,7 @@ async function renderWeek(){
       + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
   ]);
   ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || []; wkRounds = wkRounds || [];
+  await refreshQReplies(wk);      // Wes's per-question replies, shown under each
   selectedAid = null;
 
   const tray = ASSIGN.filter(a => a.day_index == null);
@@ -3189,6 +3325,7 @@ async function renderSummary(){
     // the check-ins, for the mood dots in the Tournaments tile
     selSoft('check_ins', 'select=*'),
   ]);
+  await refreshQReplies(wk);      // so "Her week, in her words" shows his replies
 
   /* tournamentResultHtml() and moodDot() read the globals that the TOURNAMENTS
      page fills in — TROUNDS and CHECKINS. This page never populated either, so
@@ -3308,12 +3445,11 @@ async function renderSummary(){
 
   // Her own words, clearly attributed and kept OUT of the computed summary:
   // evidence and testimony sit beside each other, never blended.
+  /* Was a second hand-rolled copy of this card. Now the same component her
+     Weekly Commitments page uses, which is what lets him reply from here — the
+     duplicate was the reason the reply button had nowhere to live. */
   const r0 = (refl||[])[0];
-  if (r0 && r0.submitted_at){
-    const row=(l,v)=>v?`<div style="margin-bottom:9px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu);margin-bottom:2px">${l}</div><div style="font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(v)}</div></div>`:'';
-    h += `<div class="card"><div class="ct">Her week, in her words</div>
-      ${row('What felt good', r0.felt_good)}${row('What was off', r0.was_off)}${row('Committing to next week', r0.commitment)}</div>`;
-  }
+  if (r0 && r0.submitted_at) h += herWordsHtml(r0);
 
   /* KEPT, though she asked for the commitments card to go: a drill skipped
      three weeks running is not visible anywhere else. The tile detail shows
@@ -3508,8 +3644,14 @@ function skipStreaks(all, wk){
 async function renderFeedback(){
   const wk = ymd(WEEK);
   const rows = await sel('feedback', `select=*&week_start=eq.${wk}&order=created_at.asc`) || [];
-  const teacher = rows.filter(r => r.author === 'teacher');
-  const claude  = rows.filter(r => r.author === 'claude');
+  /* !r.question IS LOAD-BEARING. Per-question replies to her reflection live in
+     this same table (migration 22) and belong under the question they answer, on
+     the Weekly Commitments page — not here. Without the filter they would land
+     in this list too, and the Write/Edit button below, which assumes
+     teacher[0] IS the week's one general comment, would start editing whichever
+     reply happened to be written first. */
+  const teacher = rows.filter(r => r.author === 'teacher' && !r.question);
+  const claude  = rows.filter(r => r.author === 'claude'  && !r.question);
 
   let h = weekNavHtml(fmtRange(WEEK));
 

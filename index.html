@@ -232,6 +232,21 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 .fb{white-space:pre-wrap;line-height:1.62;font-size:14px}
 .fb-claude{border-left:3px solid var(--pu);padding-left:12px}
 .fb-teacher{border-left:3px solid var(--bl);padding-left:12px}
+/* REFLECTION Q&A (17 Aug). Wes asked to answer her three questions one at a
+   time rather than in one lump, so each question becomes a box that can hold a
+   reply. The box exists to bind his answer to her answer visually — without it,
+   three replies down one card read as one comment in three paragraphs. */
+.qbox{border:1px solid var(--b1);background:var(--s2);border-radius:10px;padding:11px 13px;margin-bottom:10px}
+.qbox:last-child{margin-bottom:0}
+.qbox-q{font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu);margin-bottom:4px}
+.qbox-a{font-size:13.5px;line-height:1.5;white-space:pre-wrap}
+/* His reply, in his blue — the same blue as .fb-teacher above and the authorship
+   ring on assignment pills, so "blue means Wes" holds across the whole app.
+   Indented under her answer rather than beside it: the order is the argument. */
+.qreply{margin-top:9px;border-left:3px solid var(--bl);padding:2px 0 2px 11px}
+.qreply-h{font-size:10px;text-transform:uppercase;letter-spacing:.9px;color:var(--bl);
+  font-weight:600;margin-bottom:3px}
+.qreply-b{font-size:13.5px;line-height:1.55;white-space:pre-wrap;color:var(--bl)}
 
 /* ── sheet (modal) ───────────────────────────────────────────── */
 .sheet{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.62);display:none;align-items:flex-end}
@@ -854,6 +869,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260815-1"></script>
+<script src="app-pages.js?v=20260817-1"></script>
 </body>
 </html>
