@@ -562,6 +562,11 @@ const REFLECT_Q = [
   {k:'commitment', lbl:'Committing to next week', ask:'What are you committing to for next week?'},
 ];
 
+/* How long after pinging her about a reply a further reply stays silent. Sized
+   to one sitting: he answers two or three questions in a few minutes and she
+   gets one message; he comes back on Wednesday and that is a new message. */
+const QPING_WINDOW_MIN = 10;
+
 /* Wes's replies for the week being viewed, keyed by question. Filled by
    renderWeek and renderSummary; both pages read it through replyFor. */
 let QREPLIES = [];
@@ -680,22 +685,36 @@ async function saveReply(k){
   } else {
     await ins('feedback', {student_id:STUDENT_ID, week_start:wk,
                            author:'teacher', question:k, body});
-    /* ONE PING PER WEEK, not one per question. He will usually answer all three
-       in a sitting, and three Signal messages inside a minute is precisely how
-       the ntfy channel trained her to ignore it. The marker trick is the one
-       notifyNewComp already uses: the notification carries #R<week>, and its
-       presence is what makes the second and third replies silent.
-       Consequence worth knowing: a reply he adds days later will not ping
-       again. Her call to reverse if that bites. */
-    const tag  = '#R' + wk;
-    const seen = await selSoft('notifications',
-      'select=message&recipient=eq.' + encodeURIComponent(STUDENT_NAME)) || [];
-    if (seen.some(n => String(n.message||'').includes(tag))){
-      toast('Saved');
+
+    /* PING ON A 10-MINUTE WINDOW, her call 17 Aug, and the right rule.
+       Answering all three in one sitting is one event and should be one message;
+       coming back to a second question on Wednesday is a new event and should
+       be a new message. Once-per-week (what this was first) silently swallowed
+       the Wednesday one; once-per-reply is three messages inside a minute,
+       which is precisely how the ntfy channel trained her to ignore it.
+
+       MATCHED ON THE MESSAGE'S OWN FIRST LINE rather than a #R<week> marker.
+       The line already names the week, so it identifies the thing exactly —
+       and it means nothing has to ride along in her Signal message just to let
+       the app recognise its own notifications later.
+
+       WINDOWED SERVER-SIDE, so only pings that could still suppress this one
+       are fetched — no growing scan of her whole notification history.
+
+       FAILS TOWARDS PINGING. If the read is blocked or created_at is unusable
+       the window looks empty and the message goes out: a duplicate ping is
+       recoverable noise, a swallowed one is her never learning he replied. */
+    const line   = `${TEACHER_NAME} has replied to your reflection for ${fmtRange(WEEK)}.`;
+    const since  = new Date(Date.now() - QPING_WINDOW_MIN*60000).toISOString();
+    const recent = await selSoft('notifications',
+      `select=message&recipient=eq.${encodeURIComponent(STUDENT_NAME)}`
+      + `&created_at=gte.${encodeURIComponent(since)}`) || [];
+
+    if (recent.some(n => String(n.message||'').includes(line))){
+      toast(`Saved — she was pinged in the last ${QPING_WINDOW_MIN} min`);
     } else {
       const sent = await notify(STUDENT_NAME,
-        `${TEACHER_NAME} has replied to your reflection for ${fmtRange(WEEK)}.`
-        + `\n\nIt's under each question on your Weekly Commitments page. ${tag}`);
+        line + `\n\nIt's under each question on your Weekly Commitments page.`);
       toast(sent ? 'Sent — Astrid notified' : 'Saved');
     }
   }
