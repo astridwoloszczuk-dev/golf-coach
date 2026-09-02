@@ -1107,6 +1107,52 @@ async function saveWeekNote(){
    ═══════════════════════════════════════════════════════════════ */
 let DRILLS = [], DRILL_SCORES = null;
 
+/* Where a drill came from. Her ask, 2 Sep 2026: she wants to know whether a
+   game is one she made up, one Claude added at some point, or genuinely one of
+   Wes's — and expects to add "Oli" the day he finally gives her one.
+
+   This is `created_by`, widened by migration 23, NOT a second `source` column
+   beside it. Checked before building: nothing in the app or the Sunday run ever
+   branched on created_by — coach_publish selects it into the prompt and stamps
+   'claude' on drills it invents, and that is the whole of it. So it was already
+   provenance wearing the wrong name. A second field would have asked her two
+   questions on every new drill, and the answer to "who typed it in" has never
+   been used by anything, including her.
+
+   Hers gets NO badge: absence is the default, and a library where most rows say
+   "mine" is noise. The teacher sees none of them either — "only i need to see
+   this" — his page is about the work, not her filing. */
+const SRC_RESERVED = ['student', 'teacher', 'claude'];
+const sourceName = v => v === 'student' ? 'Me'
+                      : v === 'teacher' ? TEACHER_NAME
+                      : v === 'claude'  ? 'Claude'
+                      : v;
+
+function sourceBadge(d){
+  const v = d.created_by;
+  if (ME.role === 'teacher' || !v || v === 'student') return '';
+  const cls = v === 'teacher' ? 'bg-teacher' : v === 'claude' ? 'bg-claude' : 'bg-student';
+  return `<span class="bg ${cls}">${esc(sourceName(v))}</span>`;
+}
+
+/* Reserved three, plus every other source already in the library, so the second
+   drill from Oli is a pick rather than a re-type (and cannot become "oli"). */
+function sourceOptions(cur){
+  const extra = [...new Set((DRILLS || []).map(x => x.created_by)
+                   .filter(v => v && !SRC_RESERVED.includes(v)))];
+  const all = [...SRC_RESERVED, ...extra];
+  if (cur && !all.includes(cur)) all.push(cur);
+  return all.map(v => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(sourceName(v))}</option>`).join('')
+       + '<option value="__other">Someone else…</option>';
+}
+function toggleOtherSource(){
+  const sEl = el('d-src'), oEl = el('d-src-other');
+  if (!sEl || !oEl) return;
+  const other = sEl.value === '__other';
+  oEl.style.display = other ? '' : 'none';
+  if (other) oEl.focus();
+}
+
 async function renderDrills(){
   DRILLS = await sel('drills', 'select=*&archived=eq.false&order=category.asc,name.asc') || [];
   let h = `<div class="rbtns" style="margin:0 0 12px"><button class="btn btnp" onclick="editDrill(null)">＋ New drill or game</button></div>`;
@@ -1119,8 +1165,7 @@ async function renderDrills(){
     for (const d of list){
       h += `<div class="drow" onclick="openDrill(${d.id})">
         <div class="dn"><b>${esc(d.name)}</b><span>${esc(d.description||'')}</span></div>
-        ${d.created_by === 'claude' ? '<span class="bg bg-claude">Claude</span>' : ''}
-        ${d.created_by === 'teacher' ? '<span class="bg bg-teacher">'+esc(TEACHER_NAME)+'</span>' : ''}
+        ${sourceBadge(d)}
         <span class="chev">›</span>
       </div>`;
     }
@@ -1146,6 +1191,8 @@ async function openDrill(id){
     <div class="sheet-h"><b>${esc(d.name)}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="empty" style="padding:0 0 10px">${esc(catLabel(d.category))}${d.scoring_hint?' · scored '+esc(d.scoring_hint):''}</div>
     ${d.description ? `<p style="font-size:14px;line-height:1.6;margin-bottom:14px;white-space:pre-wrap">${esc(d.description)}</p>` : ''}
+    ${d.photo_path ? `<img src="${photoUrl(d.photo_path)}" alt="" loading="lazy"
+       style="width:100%;border-radius:9px;border:1px solid var(--b1);display:block;margin-bottom:14px">` : ''}
     ${sparkHtml(hist)}
     <div class="dl">Assign to</div>
     <div class="rbtns" style="margin-top:0">
@@ -1199,29 +1246,155 @@ async function assignDrill(drillId, weekStart){
   toast(byTeacher ? 'Assigned — Astrid notified' : 'Added to your open assignments');
 }
 
+/* ── drill photos ──────────────────────────────────────────
+   Wes's ask, 2 Sep 2026: a picture of the setup — where the tees go, how the
+   spiral is laid out — instead of a paragraph she has to parse on a phone at
+   the practice green, in the sun. That is a removal, not more instrumentation.
+
+   ONE photo, not a gallery: a second slot invites a collection nobody curates.
+   PUBLIC bucket with an unguessable path (migration 23) — these are pictures of
+   tees on a green, and signed-URL expiry is real complexity bought against no
+   real threat. Downscaled to 1200px BEFORE upload: a library page that costs
+   megabytes on mobile data is a page she stops opening on the course.
+
+   The upload runs AFTER the row is saved, because the path is keyed on the
+   drill id and a new drill has not got one yet. If it fails the drill still
+   saves — a lost photo is a retry, a lost drill is retyping. */
+const PHOTO_BUCKET = 'drill-photos';
+const photoUrl = p => `${SB_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${p}`;
+
+let DRILL_EDIT = {};            // {id, photo_path} of the sheet that is open
+let drillPhotoPending = null;   // {blob, preview, kb} chosen, not yet uploaded
+let drillPhotoRemove = false;
+
+function dataUrlToBlob(u){
+  const [meta, b64] = u.split(',');
+  const bin = atob(b64), arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type: (meta.match(/:(.*?);/) || [, 'image/jpeg'])[1]});
+}
+
+async function uploadDrillPhoto(drillId, blob){
+  const tok = await validToken();
+  const rnd = crypto.randomUUID ? crypto.randomUUID()
+            : Date.now().toString(36) + Math.random().toString(36).slice(2);
+  const path = `${drillId}/${rnd}.jpg`;
+  const r = await fetch(`${SB_URL}/storage/v1/object/${PHOTO_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: {apikey: SB_KEY, Authorization: 'Bearer ' + (tok || SB_KEY),
+              'Content-Type': 'image/jpeg'},
+    body: blob,
+  });
+  if (!r.ok) throw new Error(r.status + ': ' + (await r.text().catch(()=> '')).slice(0, 120));
+  return path;
+}
+
+/* Best-effort: an orphaned object costs a few KB, a thrown error costs the save. */
+async function deleteDrillPhoto(path){
+  if (!path) return;
+  try {
+    const tok = await validToken();
+    await fetch(`${SB_URL}/storage/v1/object/${PHOTO_BUCKET}/${path}`, {
+      method: 'DELETE',
+      headers: {apikey: SB_KEY, Authorization: 'Bearer ' + (tok || SB_KEY)},
+    });
+  } catch(e){ console.warn('old drill photo not deleted', e); }
+}
+
+function drillPhotoBox(){
+  const src = drillPhotoPending ? drillPhotoPending.preview
+            : (!drillPhotoRemove && DRILL_EDIT.photo_path) ? photoUrl(DRILL_EDIT.photo_path)
+            : null;
+  if (!src)
+    return `<div style="height:92px;border:1.5px dashed var(--b1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:6px" onclick="el('d-photo-file').click()">📷</div>
+      <button class="btn btns" style="width:100%" onclick="el('d-photo-file').click()">Choose photo</button>`;
+  return `<img src="${src}" alt="" style="width:100%;border-radius:8px;border:1px solid var(--b1);display:block;margin-bottom:6px">
+    <div class="rbtns" style="margin-top:0">
+      <button class="btn btns" onclick="el('d-photo-file').click()">Replace</button>
+      <button class="btn btns btnd" onclick="clearDrillPhoto()">Remove</button>
+      ${drillPhotoPending ? `<span class="empty" style="padding:0;font-size:11px;align-self:center">${drillPhotoPending.kb}KB · saves with the drill</span>` : ''}
+    </div>`;
+}
+function redrawPhotoBox(){ const b = el('d-photo-box'); if (b) b.innerHTML = drillPhotoBox(); }
+
+function onDrillPhoto(input){
+  const f = input.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = e => resizeImage(e.target.result, 1200, 420000, (out, kb) => {
+    drillPhotoPending = {blob: dataUrlToBlob(out), preview: out, kb};
+    drillPhotoRemove = false;
+    redrawPhotoBox();
+  });
+  rd.readAsDataURL(f);
+  input.value = '';               // so re-picking the same file still fires
+}
+function clearDrillPhoto(){
+  drillPhotoPending = null; drillPhotoRemove = true; redrawPhotoBox();
+}
+
 function editDrill(id){
-  const d = id ? DRILLS.find(x=>x.id===id) : {category:'putting_chipping', name:'', description:'', scoring_hint:''};
+  const d = id ? DRILLS.find(x=>x.id===id)
+               : {category:'putting_chipping', name:'', description:'', scoring_hint:'', created_by:'student'};
+  DRILL_EDIT = {id: id || null, photo_path: d.photo_path || null};
+  drillPhotoPending = null; drillPhotoRemove = false;
   openSheet(`
     <div class="sheet-h"><b>${id?'Edit drill':'New drill or game'}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="fr"><label>Category</label><select id="d-cat">
       ${CATS.map(c=>`<option value="${c.id}" ${c.id===d.category?'selected':''}>${c.label}</option>`).join('')}</select></div>
     <div class="fr"><label>Name</label><input type="text" id="d-name" value="${esc(d.name)}" placeholder="e.g. Gate drill – 3ft"></div>
+    <div class="fr"><label>Where it came from</label>
+      <select id="d-src" onchange="toggleOtherSource()">${sourceOptions(d.created_by||'student')}</select>
+      <input type="text" id="d-src-other" placeholder="e.g. Oli" style="display:none;margin-top:6px"></div>
     <div class="fr"><label>Description</label><textarea id="d-desc" rows="4" placeholder="How is it set up, and what counts?">${esc(d.description||'')}</textarea></div>
     <div class="fr"><label>How it's scored</label><input type="text" id="d-score" value="${esc(d.scoring_hint||'')}" placeholder="out of 20 / points / metres"></div>
+    <div class="fr"><label>Photo — the setup, not the swing</label>
+      <div id="d-photo-box">${drillPhotoBox()}</div>
+      <input type="file" id="d-photo-file" accept="image/*" style="display:none" onchange="onDrillPhoto(this)"></div>
     <div class="rbtns"><button class="btn btnp" onclick="saveDrill(${id||'null'})">Save</button>
       <button class="btn" onclick="closeSheet()">Cancel</button></div>`);
 }
 async function saveDrill(id){
   const name = gv('d-name');
   if (!name){ toast('Give it a name'); return; }
-  const row = {category: gv('d-cat'), name, description: gv('d-desc')||null, scoring_hint: gv('d-score')||null};
-  if (id) await upd('drills','id=eq.'+id, row);
-  else await ins('drills', {...row, created_by: ME.role === 'teacher' ? 'teacher' : 'student'});
+  let src = gv('d-src');
+  if (src === '__other') src = gv('d-src-other');
+  if (!src) src = ME.role === 'teacher' ? 'teacher' : 'student';
+  const row = {category: gv('d-cat'), name, description: gv('d-desc')||null,
+               scoring_hint: gv('d-score')||null, created_by: src};
+  let saved;
+  try { saved = id ? await upd('drills','id=eq.'+id, row) : await ins('drills', row); }
+  catch(e){ toast('Not saved — ' + e.message.slice(0,60)); return; }
+
+  // The photo needs the id for its path, so it can only go up once the row exists.
+  const drillId = id || (saved && saved[0] && saved[0].id);
+  if (drillId && (drillPhotoPending || drillPhotoRemove)){
+    const old = DRILL_EDIT.photo_path;
+    try {
+      const path = drillPhotoPending ? await uploadDrillPhoto(drillId, drillPhotoPending.blob) : null;
+      await upd('drills','id=eq.'+drillId, {photo_path: path});
+      if (old && old !== path) await deleteDrillPhoto(old);
+    } catch(e){
+      toast('Drill saved, photo did not — ' + e.message.slice(0,45));
+      drillPhotoPending = null; drillPhotoRemove = false; DRILL_EDIT = {};
+      closeSheet(); renderDrills(); return;
+    }
+  }
+  drillPhotoPending = null; drillPhotoRemove = false; DRILL_EDIT = {};
   closeSheet(); toast('Saved'); renderDrills();
 }
 async function archiveDrill(id){
   if (!confirm('Archive this drill? Past scores stay.')) return;
   await upd('drills','id=eq.'+id, {archived:true});
+  /* 2 Sep 2026: archiving used to leave open assignments behind. "Post-fault
+     reset" was archived out of the library and still sat in next week's tray —
+     a drill she has said she is done with, still asking to be done. Untouched
+     rows only: anything ticked or scored is history and stays. A teacher-set
+     row survives this by design (migration 19) — RLS drops it from the delete
+     rather than erroring, which is the behaviour we want. */
+  const wk = ymd(monday(new Date()));
+  try {
+    await del('assignments', `drill_id=eq.${id}&week_start=gte.${wk}&done=is.false&score=is.null`);
+  } catch(e){ console.warn('archive: open assignments not cleared', e); }
   closeSheet(); renderDrills();
 }
 
@@ -2314,25 +2487,29 @@ function scanHtml(){
 }
 function saveAnthKey(){ const k=gv('ank'); if(k){ localStorage.setItem('anthropic_key',k); renderRounds(); } }
 
-function resizeForApi(dataUrl,cb){
+/* Canvas downscale, shared by the two things that upload an image. They want
+   genuinely different ceilings, so both are arguments rather than one compromise
+   constant: a scorecard is read by a model, a drill photo is read by an eye. */
+function resizeImage(dataUrl, maxEdge, byteCap, cb){
   const img=new Image();
   img.onload=()=>{
-    /* 2576 = Sonnet 5's high-resolution ceiling on the long edge, raised from
-       1400 on 14 Aug with the model swap. 1400 was correct for Haiku 4.5, which
-       caps at 1568 and would have downscaled anything larger itself. Do not
-       raise this further: past 2576 the API downscales and the extra bytes are
-       uploaded for nothing. The 4.7MB guard below is the base64 request cap and
-       still applies — quality steps down before size does. */
-    const MAX=2576; let w=img.width,h=img.height;
-    const s=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+    let w=img.width,h=img.height;
+    const s=Math.min(1,maxEdge/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
     const c=document.createElement('canvas'); c.width=w; c.height=h;
     c.getContext('2d').drawImage(img,0,0,w,h);
     let q=0.82,out=c.toDataURL('image/jpeg',q);
-    while(out.length>4700000&&q>0.3){ q-=0.15; out=c.toDataURL('image/jpeg',q); }
+    while(out.length>byteCap&&q>0.3){ q-=0.15; out=c.toDataURL('image/jpeg',q); }
     cb(out, Math.round(out.length*0.75/1024));
   };
   img.src=dataUrl;
 }
+/* 2576 = Sonnet 5's high-resolution ceiling on the long edge, raised from 1400
+   on 14 Aug with the model swap. 1400 was correct for Haiku 4.5, which caps at
+   1568 and would have downscaled anything larger itself. Do not raise this
+   further: past 2576 the API downscales and the extra bytes are uploaded for
+   nothing. The 4.7MB guard is the base64 request cap and still applies —
+   quality steps down before size does. */
+function resizeForApi(dataUrl,cb){ resizeImage(dataUrl, 2576, 4700000, cb); }
 function onScanFile(input,i){
   const f=input.files[0]; if(!f) return;
   const rd=new FileReader();
