@@ -776,15 +776,20 @@ async function renderWeek(){
      NOTHING IS BACKFILLED. Rounds already carry their own date, so every past
      week populates itself the moment this renders; there was no migration to
      run and no second copy of the data to keep in step. */
-  let wkRounds;
-  [ASSIGN, SUBS, REFL, wkRounds] = await Promise.all([
+  let wkRounds, wkPlanned;
+  [ASSIGN, SUBS, REFL, wkRounds, wkPlanned] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category,description,scoring_hint,created_by)&week_start=eq.${wk}&order=sort.asc,id.asc`),
     sel('week_submissions', `select=id,submitted_at&week_start=eq.${wk}&order=submitted_at.asc`),
     selSoft('week_reflections', `select=*&week_start=in.(${wk},${prevWk})`),
     selSoft('golf_rounds', `select=id,date,comp,matchplay,practice,is_simple,holes,holes_data`
       + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
+    // selSoft: until migration 24 is run this returns [] and the page is
+    // exactly what it was — a feature must never break a page that worked.
+    selSoft('planned_rounds', `select=id,date,kind,note`
+      + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
   ]);
   ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || []; wkRounds = wkRounds || [];
+  wkPlanned = wkPlanned || [];
   await refreshQReplies(wk);      // Wes's per-question replies, shown under each
   selectedAid = null;
 
@@ -808,7 +813,19 @@ async function renderWeek(){
     // a drill can be moved to the day she means to do it, a round happened when
     // it happened and nothing should be able to shift it.
     const rounds = wkRounds.filter(r => r.date === d.ymd);
-    const cells  = items.map(pillHtml).join('') + rounds.map(roundPillHtml).join('');
+    /* A PLACEHOLDER IS NEVER TICKED OFF — it is answered by the golf actually
+       happening, so the real pill REPLACES the dashed one rather than sitting
+       beside it asking to be reconciled. The row stays in the table; it just
+       has nothing left to say.
+
+       One round consumes one placeholder, not the whole day: if she pencilled
+       in nine holes AND a practice and played only one, the other is still an
+       intention and should still show. Nothing tries to guess WHICH plan a
+       round answers — on a day with two, either reading is a guess, and the
+       honest move is to drop one and leave one. */
+    const plans  = wkPlanned.filter(r => r.date === d.ymd).slice(rounds.length);
+    const cells  = items.map(pillHtml).join('') + rounds.map(roundPillHtml).join('')
+                 + plans.map(plannedPillHtml).join('');
     h += `<div class="day ${d.isToday?'today':''}" data-drop="${d.i}" onclick="dayTapped(${d.i})">
       <div class="day-h"><b>${d.long}</b><span>${fmtDay(d.d)}${d.isToday?' · today':''}</span></div>
       <div class="pills">${cells || '<span class="empty" style="padding:0;font-size:12px">—</span>'}</div>
@@ -818,7 +835,10 @@ async function renderWeek(){
 
   h += `<div class="tray" data-drop="tray" onclick="trayTapped()">
     <div class="ct"><span>Open assignments${tray.length?' · '+tray.length:''}</span>
-      <button class="btn btns" onclick="event.stopPropagation();go('drills')">＋ From library</button></div>
+      <span style="display:flex;gap:6px">
+        ${ME.role === 'student' ? `<button class="btn btns" onclick="event.stopPropagation();addPlannedRound()">＋ Round</button>` : ''}
+        <button class="btn btns" onclick="event.stopPropagation();go('drills')">＋ From library</button>
+      </span></div>
     <div class="pills">${tray.map(pillHtml).join('') || '<span class="empty" style="padding:0;font-size:12px">Nothing waiting. Add from the library.</span>'}</div>
   </div>`;
 
@@ -869,6 +889,61 @@ function roundPillHtml(r){
   return `<span class="rpill ${kind}" onclick="event.stopPropagation()" title="${esc(tip)}">
     <span>${label}</span><span class="h">${holes}</span>
   </span>`;
+}
+
+/* ── planned rounds ────────────────────────────────────────
+   Her ask, 2 Sep: the shape of the week, visible to Wes when she submits the
+   plan. Deliberately the thinnest possible object — a date and a kind. No
+   time, no course, no confirmed/tbc toggle: a placeholder that needs
+   maintaining is a task, and she has enough of those. If it firms up it lands
+   in the calendar and then in golf_rounds, which is what clears it.
+
+   Dashed, and drawn in the muted colour rather than one of the three round
+   colours, so nobody reads it as golf that happened. */
+const PLAN_KINDS = [
+  {id:'18',       label:'18 holes'},
+  {id:'9',        label:'9 holes'},
+  {id:'match',    label:'Friendly match'},
+  {id:'practice', label:'Practice'},
+];
+const planLabel = k => (PLAN_KINDS.find(x => x.id === k) || {}).label || k;
+
+function plannedPillHtml(r){
+  const tip = planLabel(r.kind) + ' · planned' + (r.note ? ' · ' + r.note : '');
+  return `<span class="rpill tbc" title="${esc(tip)}"
+     onclick="event.stopPropagation();removePlannedRound(${r.id})">
+    <span>${esc(planLabel(r.kind))}</span><span class="h">tbc</span>
+  </span>`;
+}
+
+function addPlannedRound(){
+  const days = weekDays();
+  openSheet(`
+    <div class="sheet-h"><b>Planned round</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <p class="empty" style="padding:0 0 10px">A placeholder so ${esc(TEACHER_NAME)} can see the
+      shape of the week. It clears itself when you enter the round.</p>
+    <div class="fr"><label>What</label><select id="pr-kind">
+      ${PLAN_KINDS.map(k => `<option value="${k.id}">${k.label}</option>`).join('')}</select></div>
+    <div class="fr"><label>Day</label><select id="pr-day">
+      ${days.map(d => `<option value="${d.ymd}" ${d.isToday?'selected':''}>${d.long} · ${fmtDay(d.d)}</option>`).join('')}</select></div>
+    <div class="fr"><label>Note (optional)</label>
+      <input type="text" id="pr-note" placeholder="e.g. Wienerberg? / with Oli"></div>
+    <div class="rbtns"><button class="btn btnp" onclick="savePlannedRound()">Add</button>
+      <button class="btn" onclick="closeSheet()">Cancel</button></div>`);
+}
+
+async function savePlannedRound(){
+  const row = {date: gv('pr-day'), kind: gv('pr-kind'), note: gv('pr-note') || null};
+  try { await ins('planned_rounds', row); }
+  catch(e){ toast('Not added — ' + e.message.slice(0,60)); return; }
+  closeSheet(); renderWeek();
+}
+
+async function removePlannedRound(id){
+  if (!confirm('Remove this placeholder?')) return;
+  try { await del('planned_rounds', 'id=eq.' + id); }
+  catch(e){ toast('Not removed — ' + e.message.slice(0,60)); return; }
+  renderWeek();
 }
 
 function pillHtml(a){
