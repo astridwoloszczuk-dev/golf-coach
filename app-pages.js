@@ -348,7 +348,7 @@ async function renderGoals(){
   let gRounds;
   [GOALS, gRounds] = await Promise.all([
     sel('goals', 'select=*&order=horizon.asc,sort.asc,id.asc'),
-    selSoft('golf_rounds', 'select=date,course,comp,matchplay,stats_excluded,holes_data&order=date.asc'),
+    fetchRounds(),
   ]);
   GOALS = GOALS || []; gRounds = gRounds || [];
   const canEdit = ME.role === 'teacher' || GOALS_STUDENT_WRITABLE;
@@ -781,8 +781,7 @@ async function renderWeek(){
     sel('assignments', `select=*,drills(id,name,category,description,scoring_hint,created_by)&week_start=eq.${wk}&order=sort.asc,id.asc`),
     sel('week_submissions', `select=id,submitted_at&week_start=eq.${wk}&order=submitted_at.asc`),
     selSoft('week_reflections', `select=*&week_start=in.(${wk},${prevWk})`),
-    selSoft('golf_rounds', `select=id,date,comp,matchplay,practice,is_simple,holes,holes_data`
-      + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
+    fetchRounds(`date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}`),
     // selSoft: until migration 24 is run this returns [] and the page is
     // exactly what it was — a feature must never break a page that worked.
     selSoft('planned_rounds', `select=id,date,kind,note`
@@ -1486,6 +1485,20 @@ async function archiveDrill(id){
    with flaky wifi, so this writes row by row.
    ═══════════════════════════════════════════════════════════════ */
 let ROUNDS = [], roundMode = 'select', editId = null;
+
+/* ONE reader of golf_rounds. Until 3 Sep 2026 five pages each hand-picked
+   their own column list, and that is exactly how the 6 Aug bug happened:
+   `matchplay` existed in the table, was missing from one list, and every
+   metric written to exclude matchplay silently included it — nothing errored.
+   ~50 rows of select=* costs nothing; a forgotten column costs a wrong number.
+   Callers pass only a FILTER and sort in JS. `hard` = the page is about the
+   rounds and must fail loudly (Rounds page: a GRANT bug once showed 0 of 34
+   rows as "no rounds yet"); default is soft so a page that merely uses rounds
+   still renders without them. */
+async function fetchRounds(filter, hard){
+  const q = 'select=*' + (filter ? '&' + filter : '') + '&order=date.asc,id.asc';
+  return (hard ? await sel('golf_rounds', q) : await selSoft('golf_rounds', q)) || [];
+}
 let scanFiles = [null,null], scanPreviews = [null,null];
 
 /* How many hole boxes the manual card is showing. 18 unless she adds more.
@@ -1717,7 +1730,7 @@ function roundsLegendHtml(){
 
 async function renderRounds(){
   if (roundMode === 'select' && editId === null){
-    ROUNDS = await sel('golf_rounds','select=*&order=date.desc,id.desc') || [];
+    ROUNDS = (await fetchRounds('', true)).reverse();   // newest first
     if (ME.role === 'student') await loadCompSent();
   }
 
@@ -2647,7 +2660,9 @@ Return ONLY valid JSON, no markdown:
         Haiku; on Sonnet 5 it runs adaptive. Left on deliberately — deciding
         whether a smudge is a c or a tick is exactly the judgement it buys.
      3. max_tokens NOW COVERS THINKING TOO, so 2048 would truncate the JSON
-        mid-card. 8000 leaves room for both.
+        mid-card. 8000 was tried and was NOT enough — on a dense card the
+        thinking alone used it up and the reply came back with no text at
+        all (stop_reason max_tokens, 3 Sep 2026). 16000 leaves real room.
 
      If a scan ever feels slow, `output_config:{effort:'medium'}` is the dial;
      the default is high and this is a transcription task, not a reasoning one. */
@@ -2655,10 +2670,12 @@ Return ONLY valid JSON, no markdown:
     method:'POST',
     headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json',
              'anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,messages:[{role:'user',content}]}),
+    body:JSON.stringify({model:'claude-sonnet-5',max_tokens:16000,messages:[{role:'user',content}]}),
   });
   if(!resp.ok){ const e=await resp.json().catch(()=>({})); throw new Error((e.error&&e.error.message)||('HTTP '+resp.status)); }
   const data=await resp.json();
+  if(data.stop_reason==='max_tokens')
+    throw new Error('Ran out of room while reading the card (thinking + reply exceeded max_tokens). Try one side at a time, or lower the effort in analyzeScorecard.');
   /* FIND THE TEXT BLOCK, don't assume it is first. With thinking on, content[0]
      is a thinking block — and its text is EMPTY by default, so the old
      `content[0].text.trim()` threw on a response that was perfectly fine. */
@@ -2701,62 +2718,7 @@ let TOURN = [];
 let CHECKINS = [];
 const checkIn = (tid, phase) => CHECKINS.find(c => c.tournament_id === tid && c.phase === phase);
 
-/* ── Tournaments she could enter ─────────────────────────────────
-   Pulled daily from golf.at by tournament_finder.py on James, filtered
-   to within 75km of 1130, handicap-relevant and open to guests. Her
-   ask: "here are the possible tournaments, pick one" — searching
-   golf.at herself is the annoying part, not entering.
-
-   WEEKDAY IS THE DEFAULT TAB, not weekend, because weekday events are
-   the ones she actually wants. Weekend ones are kept rather than
-   filtered away, on their own tab, so the decision stays hers.
-
-   18-hole reads bold and full-strength, 9-hole deliberately quieter —
-   her words, "18 is obviously much better". The list should say that
-   before it is read.
-   ──────────────────────────────────────────────────────────────── */
-let FINDS = [], findsTab = 'week';
 let TROUNDS = [];   // rounds, for deriving tournament results
-function setFindsTab(t){ findsTab = t; renderTournaments(); }
-
-async function dismissFind(id){
-  await upd('tournament_finds', 'id=eq.'+id, {dismissed:true});
-  FINDS = FINDS.filter(f => f.id !== id);
-  renderTournaments();
-}
-
-function findsHtml(){
-  if (!FINDS.length) return '';
-  const wk  = FINDS.filter(f => !f.is_weekend);
-  const we  = FINDS.filter(f =>  f.is_weekend);
-  const list = findsTab === 'week' ? wk : we;
-  const tab = (id, label, n) => `<button class="btn btns ${findsTab===id?'btnp':''}"
-      onclick="setFindsTab('${id}')">${label}${n?' · '+n:''}</button>`;
-
-  return `<div class="card">
-    <div class="ct"><span>Could enter</span>
-      <span style="font-size:10px;color:var(--mu)">within 75km · hcp-relevant · open to guests</span></div>
-    <div class="rbtns" style="margin:0 0 10px">${tab('week','Weekdays',wk.length)}${tab('wend','Weekends',we.length)}</div>
-    ${!list.length ? `<div class="empty">Nothing on this tab.</div>` : list.map(f => {
-      const big = f.holes === 18;
-      return `<div style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--b1)">
-        <span style="font-size:11px;color:var(--mu);min-width:52px;white-space:nowrap">${fmtDay(parseYmd(f.date))}</span>
-        <div style="flex:1;min-width:0">
-          <a href="${esc(f.url||'#')}" target="_blank" rel="noopener"
-             style="font-size:${big?'14':'12.5'}px;font-weight:${big?'700':'500'};
-                    color:${big?'var(--tx)':'var(--mu)'};text-decoration:none">${esc(f.name)}</a>
-          <div style="font-size:11px;color:var(--mu);margin-top:2px">
-            <span style="color:${big?'var(--ac)':'var(--mu)'};font-weight:${big?'700':'400'}">${f.holes} holes</span>
-            ${f.club?' · '+esc(f.club):''}${f.distance_km!=null?' · '+f.distance_km+'km':' · distance unknown'}
-          </div>
-        </div>
-        ${ME.role==='student'?`<button class="btn btns" title="Not interested"
-           onclick="dismissFind(${f.id})">✕</button>`:''}
-      </div>`;
-    }).join('')}
-    <div class="empty" style="font-size:11px;padding:9px 0 0">Tapping one opens its golf.at entry page. Dismissing only hides it here.</div>
-  </div>`;
-}
 
 /* ═══════════════════════════════════════════════════════════════
    8 · OPEN TOURNAMENTS — what she could enter
@@ -2884,17 +2846,14 @@ async function dismissOpen(id){
 }
 
 async function renderTournaments(){
-  [TOURN, CHECKINS, FINDS, TROUNDS] = await Promise.all([
+  [TOURN, CHECKINS, TROUNDS] = await Promise.all([
     sel('tournaments','select=*&order=date.desc'),
     selSoft('check_ins','select=*'),      // absent until migration 03 is run
-    // absent until migration 12 + the daily pull; fails soft to an empty list
-    selSoft('tournament_finds',
-      `select=*&dismissed=is.false&date=gte.${todayYmd()}&order=date.asc`),
     // her rounds, so a tournament can show what she actually shot rather than
     // asking her to type the score a second time
-    selSoft('golf_rounds','select=date,course,comp,matchplay,holes_data,stats_excluded&order=date.asc'),
+    fetchRounds(),
   ]);
-  TOURN = TOURN || []; CHECKINS = CHECKINS || []; FINDS = FINDS || []; TROUNDS = TROUNDS || [];
+  TOURN = TOURN || []; CHECKINS = CHECKINS || []; TROUNDS = TROUNDS || [];
   const today = todayYmd();
   let h = ME.role==='student'
     ? `<div class="rbtns" style="margin:0 0 12px"><button class="btn btnp" onclick="editTournament(null)">＋ Add tournament</button></div>` : '';
@@ -2940,55 +2899,16 @@ async function renderTournaments(){
                 from a partial card should say so rather than sit next
                 to a real one pretending to be the same thing.
    ──────────────────────────────────────────────────────────────── */
-/* ── The match, derived ──────────────────────────────────────────
-   She already writes + - ½ on a separate scorecard during a match, so
-   moving it onto the card costs nothing and retires the second sheet.
-
-   Three things fall out of it, and only the third was the one she was
-   drawn to:
-
-     1. THE RESULT COMES FREE. Walk the holes, carry the lead; the match
-        ends the moment the lead exceeds the holes remaining, which is
-        exactly what "3&2" means — three up with two to play. No typing
-        a result any more.
-
-     2. NO MORE GUESSED SCORES, which is the real prize. Her convention
-        was to invent a score for a hole conceded to her, and to write a
-        triple for one she conceded. Both put fiction into the one
-        dataset that is currently clean — and the triple lands precisely
-        on her worst holes. With the match in its own column the score
-        can simply be left blank: the margin carries the match, the card
-        carries the golf, and neither has to lie for the other.
-
-     3. Whether she wins holes with birdies or bogeys. Interesting, and
-        unreadable for years — five matches a season is not a sample.
-        A bonus, never the justification.
-   ──────────────────────────────────────────────────────────────── */
-function matchResult(holes){
-  // a halved hole may arrive as . ½ 0 or = depending on when it was written
-  const marks = (holes||[]).map(h => String(h.mp||'').trim().replace(/^[.½0]$/,'='));
-  if (!marks.some(m => m === '+' || m === '-' || m === '=')) return null;
-  let lead = 0;
-  for (let i = 0; i < marks.length; i++){
-    const m = marks[i];
-    if (m === '+') lead++; else if (m === '-') lead--;
-    const left = marks.length - 1 - i;
-    // dormie is |lead| === left and the match continues; it ends when it exceeds.
-    // A match decided ON the 18th is "1up", never "1&0" - nobody says 1&0.
-    if (Math.abs(lead) > left)
-      return {won: lead > 0, holes: i + 1,
-              text: left === 0 ? `${Math.abs(lead)}up` : `${Math.abs(lead)}&${left}`};
-  }
-  if (lead === 0) return {won: null, text: 'halved', holes: marks.length};
-  return {won: lead > 0, text: `${Math.abs(lead)}up`, holes: marks.length};
-}
-
+/* The match result itself comes from matchResult() in the Rounds section —
+   one reader of the MP column, so the Rounds list and this page cannot
+   disagree about who won. (A second copy lived here until 3 Sep 2026 and,
+   being declared later in the file, silently replaced the tested one.) */
 function tournamentResult(t){
   const r = (TROUNDS||[]).find(x => x.date === t.date && !x.stats_excluded);
   // a match derived from the + - = column beats one typed by hand
   if (t.type === 'match' || (r && r.matchplay)){
     const m = r ? matchResult(r.holes_data) : null;
-    if (m) return {kind:'match', text: m.text, won: m.won, derived: true};
+    if (m) return {kind:'match', text: m.txt, won: m.won, derived: true};
     return {kind:'match', text: t.score, won: t.won};
   }
   if (!r) return nn(t.score) ? {kind:'typed', text: t.score} : null;
@@ -3583,7 +3503,7 @@ async function renderSummary(){
     sel('week_submissions', `select=submitted_at,snapshot&week_start=eq.${wk}&order=submitted_at.asc`),
     // A YEAR of rounds, not a week: the gap table compares social with
     // competition, and one week of two rounds is not a comparison.
-    sel('golf_rounds', `select=*&date=gte.${ymd(addDays(WEEK,-365))}&date=lte.${wkEnd}&order=date.asc`),
+    fetchRounds(`date=gte.${ymd(addDays(WEEK,-365))}&date=lte.${wkEnd}`, true),
     sel('goals', 'select=*&order=horizon.asc,sort.asc'),
     /* FROM THE START OF THE WEEK, not from today. Fetching only future
        tournaments meant one PLAYED earlier in the week could never appear in

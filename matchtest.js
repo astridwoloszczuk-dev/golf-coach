@@ -23,7 +23,7 @@ const grab = name => {
     else if (src[j] === '}'){ d--; if (started && d === 0) return src.slice(i, j+1); }
   }
 };
-eval(grab('ordinalHole') + '\n' + grab('matchResult') + '\n' + grab('holesSummary'));
+eval(grab('ordinalHole') + '\n' + grab('matchResult') + '\n' + grab('holesPlayed') + '\n' + grab('holesSummary'));
 
 let fails = 0;
 const t = (label, got, want) => {

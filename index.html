@@ -316,6 +316,7 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
     <div style="flex:1;min-width:0"><h1 id="pg-title">Agreed Goals</h1><div class="sub" id="pg-sub"></div></div>
     <button class="burger" id="burger" aria-label="Menu"><span></span><span></span><span></span></button>
   </div>
+  <div id="schema-warn" class="bg-bad hide" style="padding:8px 14px;font-size:12px;font-weight:600"></div>
 
   <div id="pg-goals"        class="pg"></div>
   <div id="pg-week"         class="pg"></div>
@@ -359,6 +360,14 @@ const SB_URL = 'https://ykbabwkyojlwculjmbrw.supabase.co';                    //
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrYmFid2t5b2psd2N1bGptYnJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MTg0NzMsImV4cCI6MjA5MjA5NDQ3M30.4lYnVcgv1o9OvXGMtrbjwKhXZ8Yybqln08aci_ZM9mI';
 const STUDENT_NAME = 'Astrid';   // row in family-apps `people`
 const TEACHER_NAME = 'Wes';      // Phase 2: add this row to `people`, then sends go live
+
+// THE DATABASE SAYS WHICH MIGRATION IT IS AT. Six times between Aug and Sep
+// 2026 the app shipped a feature before its migration ran, and a round or a
+// note failed to save with nothing on screen but a fading toast. Migration 25
+// puts `schema_version` in app_settings; every later migration bumps it, and
+// every app change that needs one bumps this constant. Behind = red banner.
+const SCHEMA_REQUIRED = 25;
+let   SCHEMA_LIVE = null;        // read at boot; null = the row does not exist yet
 
 // A colour per category so a long scroll tells you where you are without
 // reading a word. Distinct hues, not a ramp — these are peers, not a ranking.
@@ -740,8 +749,10 @@ const del    = (t,q)      => api(t+'?'+q, {method:'DELETE', prefer:'return=minim
    Recipients are NAMES, never numbers — no phone number is ever committed
    to this public repo; signal-server resolves them.
 
-   Events, and only these: drill assigned + feedback ready → Astrid.
-   Plan submitted + Sunday digest → Wes. No per-tick pings, ever.
+   Events (3 Sep 2026): → Astrid: drill assigned · feedback ready · Wes
+   replied to a reflection question. → Wes: plan submitted · reflection sent ·
+   comp round saved · comp round sent on a tap. The Sunday digest and the
+   check-in prompts come from James, not from here. No per-tick pings, ever.
 ────────────────────────────────────────────────────────────── */
 async function notify(name, message){
   try {
@@ -816,14 +827,22 @@ async function start(){
   STUDENT_ID = student ? student.id : meRow.id;
 
   try {
-    const st = await sel('app_settings','select=key,value&key=eq.goals_student_writable');
-    if (st && st.length) GOALS_STUDENT_WRITABLE = (st[0].value === true || st[0].value === 'true');
+    const st = await sel('app_settings','select=key,value&key=in.(goals_student_writable,schema_version)');
+    for (const s of st || []) {
+      if (s.key === 'goals_student_writable') GOALS_STUDENT_WRITABLE = (s.value === true || s.value === 'true');
+      if (s.key === 'schema_version')         SCHEMA_LIVE = Number(s.value);
+    }
   } catch {}
 
   el('auth').classList.add('hide');
   el('app').classList.remove('hide');
   el('menu-name').textContent = ME.display_name || ME.email;
   el('menu-role').textContent = ME.role === 'teacher' ? 'Teacher' : 'Student';
+  if (!(SCHEMA_LIVE >= SCHEMA_REQUIRED)) {
+    el('schema-warn').textContent = `Database is behind the app (migration ${SCHEMA_LIVE ?? 'unknown'} of ${SCHEMA_REQUIRED}). `
+      + `Some saves will fail until the missing schema-*.sql files are run in Supabase.`;
+    el('schema-warn').classList.remove('hide');
+  }
 
   // Student lands on Goals; teacher lands on the Weekly Summary.
   go(ME.role === 'teacher' ? 'summary' : 'goals');
@@ -872,6 +891,6 @@ window.addEventListener('load', () => { start(); });
      assets with a ~10 minute max-age, so without this a phone can sit on the
      old renderers long after index.html has updated — which is exactly how a
      fix looks broken while you are standing next to the person testing it. -->
-<script src="app-pages.js?v=20260817-2"></script>
+<script src="app-pages.js?v=20260903"></script>
 </body>
 </html>
