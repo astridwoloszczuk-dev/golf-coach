@@ -1249,14 +1249,22 @@ async function removeAssignment(id){
    so I fill it with things I think are useful — and that would be useful for
    him to see. If he wants to course correct he can."
 
-   AUTHORSHIP IS MARKED ON HIS, NOT ON HERS. Marking hers would tag almost every
-   line in a busy week, and the exception is the informative one — he wants to
-   know which of these he is looking at because he chose it. Claude's rows are
-   marked separately: they only exist because he did not get there by Sunday
-   22:03, and he should be able to see his own slot being filled. */
+   ONE MARK, AND IT MEANS "YOU SET THIS". Her call, 5 Sep, after the first cut
+   marked Claude's rows separately too: "unmarked is either me putting it there
+   because Claude suggested it or me putting it there because I suggested it —
+   don't think it makes a difference to him. It's not suggested by him is the
+   key here." Right: the only line he needs drawn is around his own, and a
+   second marker just makes him decode a legend.
+
+   Note the unmarked half is still literally true of Claude's rows — Claude
+   assigns into the TRAY (coach_publish sets day_index null), so everything on
+   a day is there because she put it there.
+
+   THE ROUND NOTE IS NOT SENT. "9 holes (Wienerberg?)" is her own scratch — the
+   course is undecided, which is why it has a question mark, and a coach reading
+   a maybe-venue as a fact is worse than him not seeing it. It stays on the pill
+   tooltip in the app, where it is hers. */
 function planLines(){
-  const mark = a => a.assigned_by === 'teacher' ? ' [you]'
-              : a.assigned_by === 'claude'      ? ' [Claude]' : '';
   const placed = ASSIGN.filter(a => a.day_index != null);
   return weekDays().map(d => {
     const bits = [];
@@ -1265,9 +1273,9 @@ function planLines(){
     for (const t of WKTOURN.filter(t => t.date === d.ymd))
       bits.push(t.name + ' — comp');
     for (const a of placed.filter(a => a.day_index === d.i))
-      bits.push(aName(a) + mark(a));
+      bits.push(aName(a) + (a.assigned_by === 'teacher' ? ' [you]' : ''));
     for (const r of WKPLANNED.filter(r => r.date === d.ymd))
-      bits.push(planLabel(r.kind) + (r.note ? ' (' + r.note + ')' : ''));
+      bits.push(planLabel(r.kind));
     return bits.length ? `${d.label}  ${bits.join(' · ')}` : null;
   }).filter(Boolean);
 }
@@ -1276,7 +1284,9 @@ function planLines(){
    first-submit path cannot describe the same plan two different ways. */
 function planMessage(changed){
   const placed = ASSIGN.filter(a => a.day_index != null);
-  const his    = placed.filter(a => (a.assigned_by || 'student') !== 'student').length;
+  // Teacher only, matching the one mark planLines draws. Counting Claude's here
+  // would print a legend for a marker that is no longer in the message.
+  const his    = placed.filter(a => a.assigned_by === 'teacher').length;
 
   const head = changed
     ? `Astrid has changed her plan for ${fmtRange(WEEK)}.`
@@ -1289,13 +1299,13 @@ function planMessage(changed){
   const count = [n(placed.length, 'session'),
                  n(WKPLANNED.length, 'round planned', 'rounds planned'),
                  n(WKTOURN.length, 'comp')].filter(Boolean).join(', ') || 'nothing placed yet';
-  // Only worth explaining the marks if there are any. When he has set nothing,
+  // Only worth explaining the mark if there is one. When he has set nothing,
   // the plain statement is both shorter and the more useful sentence.
-  const key = his ? 'Unmarked = she chose it herself.'
-                  : 'She chose all of this herself.';
+  const key = his ? '[you] = set by you; the rest she put there herself.'
+                  : 'She put all of this there herself.';
 
   return `${head} ${count}.\n\n${planLines().join('\n')}\n\n${key}\n\n`
-       + `Plan look off? Open it and leave her a note — she gets it straight away:\n${WEEK_URL}`;
+       + `Does the plan look off? Open it and leave her a note — she gets it straight away:\n${WEEK_URL}`;
 }
 
 async function submitWeek(){

@@ -108,7 +108,10 @@ ${pages}
   ck('the 9 holes she plans is there',       /9 holes/.test(m1));
   ck('the 18 holes she plans is there',      /18 holes/.test(m1));
   ck('the comp is there, by name',           /Ladies Trophy/.test(m1));
-  ck('the round note rides along',           /Wienerberg/.test(m1));
+  // HER SCRATCH STAYS HERS. "Wienerberg?" carries a question mark because the
+  // course is undecided; a coach reading a maybe-venue as a fact is worse than
+  // him not seeing it. It stays on the pill tooltip in the app.
+  ck('her round note is NOT sent',           !/Wienerberg/.test(m1));
   ck('the tray item is NOT there',           !/Bunker basics/.test(m1));
   // Counted SEPARATELY: a comp is an entry with a fixed date and a result, not
   // "a round she is planning", and one number for both reads wrong.
@@ -116,14 +119,18 @@ ${pages}
   ck('planned rounds are counted',           /2 rounds planned/.test(m1));
   ck('the comp is counted apart from them',  /1 comp/.test(m1));
 
-  // AUTHORSHIP: his marked, Claude's marked, hers bare. This is the whole
-  // reason she asked - he should be able to see what she chose herself.
+  /* ONE MARK, MEANING "you set this". Her call, 5 Sep: Claude's rows carried a
+     [Claude] tag in the first cut and she cut it — "it's not suggested by him
+     is the key here". So the teacher is marked and nothing else is, Claude's
+     included. The unmarked half stays literally true of Claude's rows, because
+     Claude assigns into the TRAY — everything on a day was placed by her. */
   ck('his own is marked [you]',              /Gate Putting \\[you\\]/.test(m1));
-  ck("Claude's is marked [Claude]",          /Ladder 30-80m \\[Claude\\]/.test(m1));
+  ck('the word Claude is gone entirely',     !/Claude/.test(m1));
+  ck("Claude's drill carries no mark",       /Ladder 30-80m(?! \\[)/.test(m1));
   ck('hers carries no mark',                 /Range - driver(?! \\[)/.test(m1));
-  ck('the key explains the marks',           /Unmarked = she chose it herself/.test(m1));
+  ck('the key explains the one mark',        /\\[you\\] = set by you/.test(m1));
 
-  ck('it invites him to react',              /Plan look off\\?/.test(m1));
+  ck('it invites him to react',              /Does the plan look off\\?/.test(m1));
   ck('it links straight to the week',        m1.includes('?p=week'));
 
   /* ── RE-COMMIT: he hears about it, once a day ───────────────────── */
