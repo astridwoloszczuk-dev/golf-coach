@@ -167,7 +167,10 @@ ${pages}
   ck('the extras are named, not "?"',         /extra[\\s\\S]{0,220}Lesson/.test(sum));
 
   /* ── the migration the app now needs ──────────────────────────────── */
-  ck('the app demands migration 26', SCHEMA_REQUIRED === 26);
+  // AT LEAST 26, not exactly 26: assignments.label arrived in 26 and that is
+  // the real constraint. Pinning the exact number made this test fail on the
+  // very next migration, which is noise rather than signal.
+  ck('the app demands migration 26+', SCHEMA_REQUIRED >= 26);
 
   let bad = 0;
   for (const [k,v] of checks){ if(!v) bad++; console.log((v ? '  yes  ' : '  NO   ') + k); }

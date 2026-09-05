@@ -529,6 +529,12 @@ async function deleteGoal(id){
    ═══════════════════════════════════════════════════════════════ */
 let ASSIGN = [];       // assignments for WEEK, with the embedded drill
 let SUBS = [];         // week_submissions for WEEK
+/* THE REST OF THE WEEK, hoisted out of renderWeek because submitWeek has to
+   describe it too. Her point, 5 Sep: what she sends Wes was only ever the
+   drills she had placed — not the rounds she intends to play, not the comps
+   she has entered. He was being asked to react to a third of the picture. */
+let WKPLANNED = [];    // planned_rounds for WEEK
+let WKTOURN = [];      // tournaments dated inside WEEK
 let REFL = [];         // week_reflections for WEEK and the one before
 let selectedAid = null;
 
@@ -566,6 +572,10 @@ const REFLECT_Q = [
    to one sitting: he answers two or three questions in a few minutes and she
    gets one message; he comes back on Wednesday and that is a new message. */
 const QPING_WINDOW_MIN = 10;
+/* How long a re-committed plan stays quiet before it will ping Wes again.
+   Hours, not minutes: the reply window above guards a burst of answers written
+   in one sitting, this one guards a week of small edits to the same plan. */
+const PLAN_PING_WINDOW_H = 24;
 
 /* Wes's replies for the week being viewed, keyed by question. Filled by
    renderWeek and renderSummary; both pages read it through replyFor. */
@@ -655,15 +665,26 @@ function reflectionHtml(){
 
 /* ── Wes replies to one question ──────────────────────────────────── */
 function replyToQ(k){
-  const q = REFLECT_Q.find(x => x.k === k); if (!q) return;
+  /* THE PLAN IS THE FOURTH THING HE CAN COMMENT ON, and the only one with no
+     answer of hers sitting behind it — so the sheet shows him the plan instead,
+     built by the same planLines() that wrote his Signal message. He reacts to
+     exactly what he was sent, which is the point of there being one
+     description of the week rather than two. */
+  const plan = k === 'plan';
+  const q = plan ? {k, lbl:"On this week's plan"} : REFLECT_Q.find(x => x.k === k);
+  if (!q) return;
   const r = reflFor(ymd(WEEK)) || {}, rep = replyFor(k);
+  const lines = plan ? planLines() : [];
   openSheet(`
     <div class="sheet-h"><b>${esc(q.lbl)} · ${esc(fmtRange(WEEK))}</b>
       <button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="qbox" style="margin-bottom:12px">
-      <div class="qbox-q">She wrote</div>
-      <div class="qbox-a">${esc(r[k] || '')}</div></div>
-    <div class="fr"><textarea id="qr-body" rows="6" placeholder="Your answer to this one."></textarea></div>
+      <div class="qbox-q">${plan ? 'She has planned' : 'She wrote'}</div>
+      <div class="qbox-a">${plan ? (lines.length ? esc(lines.join('\n')) : 'Nothing placed yet.')
+                                 : esc(r[k] || '')}</div></div>
+    <div class="fr"><textarea id="qr-body" rows="6" placeholder="${plan
+      ? 'e.g. swap the second range session for chipping.'
+      : 'Your answer to this one.'}"></textarea></div>
     <div class="rbtns">
       <button class="btn btnp" onclick="saveReply('${k}')">${rep ? 'Update reply' : 'Send reply'}</button>
       <button class="btn" onclick="closeSheet()">Cancel</button>
@@ -704,7 +725,12 @@ async function saveReply(k){
        FAILS TOWARDS PINGING. If the read is blocked or created_at is unusable
        the window looks empty and the message goes out: a duplicate ping is
        recoverable noise, a swallowed one is her never learning he replied. */
-    const line   = `${TEACHER_NAME} has replied to your reflection for ${fmtRange(WEEK)}.`;
+    // A comment on the plan is a different event from a reply to a reflection,
+    // so the two must not share a window: a note on Monday's plan must never be
+    // swallowed because he happened to answer a reflection ten minutes earlier.
+    const line   = k === 'plan'
+      ? `${TEACHER_NAME} has commented on your plan for ${fmtRange(WEEK)}.`
+      : `${TEACHER_NAME} has replied to your reflection for ${fmtRange(WEEK)}.`;
     const since  = new Date(Date.now() - QPING_WINDOW_MIN*60000).toISOString();
     const recent = await selSoft('notifications',
       `select=message&recipient=eq.${encodeURIComponent(STUDENT_NAME)}`
@@ -713,8 +739,9 @@ async function saveReply(k){
     if (recent.some(n => String(n.message||'').includes(line))){
       toast(`Saved — she was pinged in the last ${QPING_WINDOW_MIN} min`);
     } else {
-      const sent = await notify(STUDENT_NAME,
-        line + `\n\nIt's under each question on your Weekly Commitments page.`);
+      const sent = await notify(STUDENT_NAME, line + (k === 'plan'
+        ? `\n\nIt's at the top of your Weekly Commitments page.`
+        : `\n\nIt's under each question on your Weekly Commitments page.`));
       toast(sent ? 'Sent — Astrid notified' : 'Saved');
     }
   }
@@ -776,8 +803,8 @@ async function renderWeek(){
      NOTHING IS BACKFILLED. Rounds already carry their own date, so every past
      week populates itself the moment this renders; there was no migration to
      run and no second copy of the data to keep in step. */
-  let wkRounds, wkPlanned, wkTourn;
-  [ASSIGN, SUBS, REFL, wkRounds, wkPlanned, wkTourn] = await Promise.all([
+  let wkRounds;
+  [ASSIGN, SUBS, REFL, wkRounds, WKPLANNED, WKTOURN] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category,description,scoring_hint,created_by)&week_start=eq.${wk}&order=sort.asc,id.asc`),
     sel('week_submissions', `select=id,submitted_at&week_start=eq.${wk}&order=submitted_at.asc`),
     selSoft('week_reflections', `select=*&week_start=in.(${wk},${prevWk})`),
@@ -801,7 +828,7 @@ async function renderWeek(){
       + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
   ]);
   ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || []; wkRounds = wkRounds || [];
-  wkPlanned = wkPlanned || []; wkTourn = wkTourn || [];
+  WKPLANNED = WKPLANNED || []; WKTOURN = WKTOURN || [];
   await refreshQReplies(wk);      // Wes's per-question replies, shown under each
   selectedAid = null;
 
@@ -835,12 +862,12 @@ async function renderWeek(){
        intention and should still show. Nothing tries to guess WHICH plan a
        round answers — on a day with two, either reading is a guess, and the
        honest move is to drop one and leave one. */
-    const plans  = wkPlanned.filter(r => r.date === d.ymd).slice(rounds.length);
+    const plans  = WKPLANNED.filter(r => r.date === d.ymd).slice(rounds.length);
     /* Tournament first — on a comp day it is the headline, and the drills
        around it are what she did to get there. It is NOT consumed by the round:
        the entry and the card are two different facts, and the pill is the only
        thing on this page that knows what the comp was called. */
-    const comps  = wkTourn.filter(t => t.date === d.ymd);
+    const comps  = WKTOURN.filter(t => t.date === d.ymd);
     const cells  = comps.map(tournPillHtml).join('')
                  + items.map(pillHtml).join('') + rounds.map(roundPillHtml).join('')
                  + plans.map(plannedPillHtml).join('');
@@ -868,6 +895,7 @@ async function renderWeek(){
     <p class="empty" style="font-size:11.5px">Submitting notifies ${esc(TEACHER_NAME)} once per week and stamps a snapshot. Ticking things off after that is silent.</p>`;
   }
 
+  h += planCommentHtml();
   h += reflectionHtml();
   h += weekNoteHtml();
   el('pg-week').innerHTML = h;
@@ -1210,6 +1238,66 @@ async function removeAssignment(id){
    re-stamps the snapshot silently — the alternative trains him to
    mute the channel, which is how the garmin flap went wrong.
 ────────────────────────────────────────────────────────────────── */
+/* ── the whole week, in words ──────────────────────────────────────────────
+   ONE DESCRIPTION OF THE PLAN, used by the Signal message she sends Wes and by
+   the sheet he writes his comment in, so the thing he is reacting to and the
+   thing he was told can never drift apart.
+
+   Her ask, 5 Sep: "the weekly commitments should be fully visible to Wes, incl
+   how many rounds I am planning on playing and all the things I am choosing to
+   place in the week incl any additional drills. He doesn't (yet?) assign much,
+   so I fill it with things I think are useful — and that would be useful for
+   him to see. If he wants to course correct he can."
+
+   AUTHORSHIP IS MARKED ON HIS, NOT ON HERS. Marking hers would tag almost every
+   line in a busy week, and the exception is the informative one — he wants to
+   know which of these he is looking at because he chose it. Claude's rows are
+   marked separately: they only exist because he did not get there by Sunday
+   22:03, and he should be able to see his own slot being filled. */
+function planLines(){
+  const mark = a => a.assigned_by === 'teacher' ? ' [you]'
+              : a.assigned_by === 'claude'      ? ' [Claude]' : '';
+  const placed = ASSIGN.filter(a => a.day_index != null);
+  return weekDays().map(d => {
+    const bits = [];
+    // Comps first, then drills, then intended rounds — the same order the day
+    // cell draws them in, so the message reads like the page looks.
+    for (const t of WKTOURN.filter(t => t.date === d.ymd))
+      bits.push(t.name + ' — comp');
+    for (const a of placed.filter(a => a.day_index === d.i))
+      bits.push(aName(a) + mark(a));
+    for (const r of WKPLANNED.filter(r => r.date === d.ymd))
+      bits.push(planLabel(r.kind) + (r.note ? ' (' + r.note + ')' : ''));
+    return bits.length ? `${d.label}  ${bits.join(' · ')}` : null;
+  }).filter(Boolean);
+}
+
+/* The message itself. Kept out of submitWeek so the re-commit path and the
+   first-submit path cannot describe the same plan two different ways. */
+function planMessage(changed){
+  const placed = ASSIGN.filter(a => a.day_index != null);
+  const his    = placed.filter(a => (a.assigned_by || 'student') !== 'student').length;
+
+  const head = changed
+    ? `Astrid has changed her plan for ${fmtRange(WEEK)}.`
+    : `Astrid has committed her plan for ${fmtRange(WEEK)}.`;
+  /* COUNTED SEPARATELY. A comp is not "a round she is planning" — it is an
+     entry, with a date she cannot move and a result at the end of it, and
+     folding the two into one number is the sort of thing that makes a coach
+     read the week wrong. Zero clauses are dropped rather than printed as 0. */
+  const n = (k, one, many) => k ? `${k} ${k===1?one:(many||one+'s')}` : null;
+  const count = [n(placed.length, 'session'),
+                 n(WKPLANNED.length, 'round planned', 'rounds planned'),
+                 n(WKTOURN.length, 'comp')].filter(Boolean).join(', ') || 'nothing placed yet';
+  // Only worth explaining the marks if there are any. When he has set nothing,
+  // the plain statement is both shorter and the more useful sentence.
+  const key = his ? 'Unmarked = she chose it herself.'
+                  : 'She chose all of this herself.';
+
+  return `${head} ${count}.\n\n${planLines().join('\n')}\n\n${key}\n\n`
+       + `Plan look off? Open it and leave her a note — she gets it straight away:\n${WEEK_URL}`;
+}
+
 async function submitWeek(){
   const placed = ASSIGN.filter(a => a.day_index != null);
   const snapshot = placed.map(a => ({
@@ -1220,18 +1308,71 @@ async function submitWeek(){
   const first = SUBS.length === 0;
   await ins('week_submissions', {student_id: STUDENT_ID, week_start: ymd(WEEK), snapshot});
 
+  /* A RE-COMMIT USED TO BE SILENT, and that quietly defeated the point of
+     showing him the plan at all. She fills the week as it goes — that is the
+     whole reason it is worth him seeing — so the first submit was a Monday
+     snapshot he was invited to react to, and every change after it reached him
+     only if he happened to open the app.
+
+     So a re-commit tells him too, WINDOWED to one plan message a day. Same
+     guard as the reply ping, different clock: that one is sized against a burst
+     of answers in one sitting, this against a week of small edits. Pressing
+     Re-commit three times while tidying Tuesday is one event, not three, and
+     the ntfy flap is the standing lesson on what a channel that cries wolf
+     becomes. It stays one message TYPE — the spec's rule was against a new kind
+     of ping, not against this one being current.
+
+     FAILS TOWARDS SENDING: if the window read is blocked the window looks empty
+     and the message goes out. A duplicate is recoverable noise; a swallowed one
+     is him coaching against a plan that no longer exists. */
+  const msg  = planMessage(!first);
+  const line = `Astrid has changed her plan for ${fmtRange(WEEK)}.`;
+  let sent = false, held = false;
+
   if (first){
-    const byDay = weekDays().map(d => {
-      const items = placed.filter(a => a.day_index === d.i);
-      return items.length ? `${d.label}: ${items.map(a=>aName(a)).join(', ')}` : null;
-    }).filter(Boolean);
-    const sent = await notify(TEACHER_NAME,
-      `Astrid has committed her plan for ${fmtRange(WEEK)} — ${placed.length} session${placed.length===1?'':'s'}.\n\n${byDay.join('\n')}`);
-    toast(sent ? 'Committed — ' + TEACHER_NAME + ' notified' : 'Committed (' + TEACHER_NAME + ' not on Signal yet — queued)');
+    sent = await notify(TEACHER_NAME, msg);
   } else {
-    toast('Plan re-stamped');
+    const since  = new Date(Date.now() - PLAN_PING_WINDOW_H*3600000).toISOString();
+    const recent = await selSoft('notifications',
+      `select=message&recipient=eq.${encodeURIComponent(TEACHER_NAME)}`
+      + `&created_at=gte.${encodeURIComponent(since)}`) || [];
+    if (recent.some(n => String(n.message||'').includes(line))) held = true;
+    else sent = await notify(TEACHER_NAME, msg);
   }
+
+  const what = first ? 'Committed' : 'Re-stamped';
+  toast(held ? `${what} — ${TEACHER_NAME} was already told today`
+      : sent ? `${what} — ${TEACHER_NAME} notified`
+      :        `${what} (${TEACHER_NAME} not on Signal yet — queued)`);
   renderWeek();
+}
+
+/* ── his note on the plan ──────────────────────────────────────────────────
+   Sits directly under the grid, because a course-correction that lands on the
+   Feedback page is a course-correction she reads after the week is over.
+
+   FOR HIM IT IS ONLY OFFERED ONCE SHE HAS COMMITTED. Before that the grid is a
+   draft she is still moving things around on, and commenting on a draft is how
+   you end up commenting twice. After that it is always available — including
+   on a re-commit, which is the case that matters, since the week she actually
+   does is usually not the week she planned on Monday.
+
+   FOR HER IT IS ONLY DRAWN WHEN HE HAS WRITTEN. An empty "no comment from Wes"
+   panel every week is a weekly reminder of silence, which is not what she asked
+   for and is exactly the kind of thing she strips out. */
+function planCommentHtml(){
+  const rep = replyFor('plan');
+  const teacher = ME.role === 'teacher';
+  if (!rep && (!teacher || !SUBS.length)) return '';
+
+  return `<div class="card" style="margin-top:14px">
+    <div class="ct"><span>${esc(TEACHER_NAME)} on this week's plan</span></div>
+    ${rep ? `<div class="qbox-a" style="white-space:pre-wrap">${esc(rep.body)}</div>`
+          : `<div class="empty" style="padding:0 0 4px">Nothing yet.</div>`}
+    ${teacher ? `<div class="rbtns" style="margin-top:10px">
+      <button class="btn btns" onclick="replyToQ('plan')">${rep ? '✎ Edit note' : '↩ Comment on the plan'}</button>
+    </div>` : ''}
+  </div>`;
 }
 
 /* ── the student's week note (existing weekly_notes table) ──────── */

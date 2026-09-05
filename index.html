@@ -373,7 +373,17 @@ const TEACHER_NAME = 'Wes';      // Phase 2: add this row to `people`, then send
 // note failed to save with nothing on screen but a fading toast. Migration 25
 // puts `schema_version` in app_settings; every later migration bumps it, and
 // every app change that needs one bumps this constant. Behind = red banner.
-const SCHEMA_REQUIRED = 26;
+const SCHEMA_REQUIRED = 27;
+
+/* WHERE TO SEND WES. A "leave her a note" prompt that drops him on his own
+   landing page and leaves him hunting for the week is a prompt he ignores
+   once. ?p=<page> lands him on the plan itself.
+
+   Built from location, not hardcoded: the same string then works from a local
+   file, from Pages, and from wherever this ends up next, and there is no second
+   copy of the host to update. A logged-out Wes loses the parameter to the
+   magic-link redirect and lands on his default page — no worse than today. */
+const WEEK_URL = location.origin + location.pathname.replace(/index\.html$/, '') + '?p=week';
 let   SCHEMA_LIVE = null;        // read at boot; null = the row does not exist yet
 
 // A colour per category so a long scroll tells you where you are without
@@ -851,8 +861,17 @@ async function start(){
     el('schema-warn').classList.remove('hide');
   }
 
-  // Student lands on Goals; teacher lands on the Weekly Summary.
-  go(ME.role === 'teacher' ? 'summary' : 'goals');
+  /* ?p=week wins over the role default — he followed a link that said "here",
+     so here is where he should be. Stripped straight after, so a later refresh
+     goes back to his own landing page rather than pinning him to hers. */
+  const want = new URLSearchParams(location.search).get('p');
+  if (want && PAGES[want]){
+    history.replaceState(null, '', location.pathname);
+    go(want);
+  } else {
+    // Student lands on Goals; teacher lands on the Weekly Summary.
+    go(ME.role === 'teacher' ? 'summary' : 'goals');
+  }
 }
 
 function parseJwtSub(t){
