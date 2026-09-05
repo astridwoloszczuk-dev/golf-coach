@@ -133,6 +133,24 @@ ${pages}
   ck('it invites him to react',              /Does the plan look off\\?/.test(m1));
   ck('it links straight to the week',        m1.includes('?p=week'));
 
+  /* ── WHY CLAUDE'S ROWS NEED NO LABEL ────────────────────────────────
+     Astrid, 5 Sep: "if Wes comes back with 'exchange a for b' and Claude
+     assigned that drill — can I actually do that? If I cannot delete them,
+     it is worth putting a Claude label next to them. If I can, leave as is."
+
+     She can (migration 19, deliberately: "when Claude assigns it is filling a
+     gap Wes left, not issuing an instruction — she may bin it"), so there is
+     no label. That makes this asymmetry load-bearing for the message format:
+     if a later change ever locked Claude's rows down, the unlabelled message
+     would start hiding something she cannot act on. Pinned here so that
+     change cannot pass quietly. */
+  let sh = ''; openSheet = h => { sh = h; };
+  openAssignmentSheet(ASSIGN.find(a => a.assigned_by === 'claude'));
+  ck("she can Remove Claude's drill",        /removeAssignment\\(2\\)/.test(sh));
+  openAssignmentSheet(ASSIGN.find(a => a.assigned_by === 'teacher'));
+  ck("she cannot Remove Wes's drill",        !/removeAssignment\\(1\\)/.test(sh));
+  ck('and is told why',                      /his to remove/.test(sh));
+
   /* ── RE-COMMIT: he hears about it, once a day ───────────────────── */
   FIX.week_submissions = [{id:1, submitted_at:new Date().toISOString()}];
   await renderWeek();

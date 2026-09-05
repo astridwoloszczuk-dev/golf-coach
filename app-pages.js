@@ -3733,9 +3733,15 @@ async function renderSummary(){
   const back4 = ymd(addDays(WEEK,-21));   // this week + 3 back, for the streak check
 
   const fortnight = ymd(addDays(parseYmd(todayYmd()),14));
-  const [asg, subs, rounds, goals, tourn, note, refl, cins] = await Promise.all([
+  /* NO week_submissions READ. It fetched submitted_at + the whole snapshot jsonb
+     into a binding nothing then used — a round trip, and the snapshot column is
+     the fattest thing on the row. The week page reads submissions for its
+     "Committed <date>" bar; this page never showed one. Removed 5 Sep.
+
+     (`snapshot` is write-only across the whole system: nothing in the app or on
+     James reads it back. Worth knowing before treating it as a record.) */
+  const [asg, rounds, goals, tourn, note, refl, cins] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category)&week_start=gte.${back4}&week_start=lte.${wk}&order=week_start.asc`),
-    sel('week_submissions', `select=submitted_at,snapshot&week_start=eq.${wk}&order=submitted_at.asc`),
     // A YEAR of rounds, not a week: the gap table compares social with
     // competition, and one week of two rounds is not a comparison.
     fetchRounds(`date=gte.${ymd(addDays(WEEK,-365))}&date=lte.${wkEnd}`, true),
