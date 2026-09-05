@@ -163,6 +163,13 @@ textarea{resize:vertical;min-height:64px;line-height:1.5}
 /* A PLAN, not a round: dashed and muted so it can never be misread as golf that
    happened. It is replaced by the real pill the moment the round is entered. */
 .rpill.tbc   {background:transparent; color:var(--mu); border-style:dashed; border-color:var(--b2); cursor:pointer}
+/* A COMP SHE HAS ENTERED, drawn from the Tournaments page. It keeps the comp
+   blue but takes a name rather than a hole count, so it needs to ellipsis like
+   an assignment pill does. Dashed while it is still ahead of her — same
+   "dashed = not yet" grammar as the placeholder above — and solid once it has
+   a result or the day has passed. */
+.rpill .nm   {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.rpill.ahead {background:transparent; border-style:dashed}
 .tray{background:var(--s2);border:1px dashed var(--b2);border-radius:11px;padding:11px;margin-top:14px}
 .tray.drop{border-color:var(--ac);background:rgba(200,169,110,.10)}
 .tray .ct{margin-bottom:8px}
@@ -366,7 +373,7 @@ const TEACHER_NAME = 'Wes';      // Phase 2: add this row to `people`, then send
 // note failed to save with nothing on screen but a fading toast. Migration 25
 // puts `schema_version` in app_settings; every later migration bumps it, and
 // every app change that needs one bumps this constant. Behind = red banner.
-const SCHEMA_REQUIRED = 25;
+const SCHEMA_REQUIRED = 26;
 let   SCHEMA_LIVE = null;        // read at boot; null = the row does not exist yet
 
 // A colour per category so a long scroll tells you where you are without

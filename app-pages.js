@@ -776,8 +776,8 @@ async function renderWeek(){
      NOTHING IS BACKFILLED. Rounds already carry their own date, so every past
      week populates itself the moment this renders; there was no migration to
      run and no second copy of the data to keep in step. */
-  let wkRounds, wkPlanned;
-  [ASSIGN, SUBS, REFL, wkRounds, wkPlanned] = await Promise.all([
+  let wkRounds, wkPlanned, wkTourn;
+  [ASSIGN, SUBS, REFL, wkRounds, wkPlanned, wkTourn] = await Promise.all([
     sel('assignments', `select=*,drills(id,name,category,description,scoring_hint,created_by)&week_start=eq.${wk}&order=sort.asc,id.asc`),
     sel('week_submissions', `select=id,submitted_at&week_start=eq.${wk}&order=submitted_at.asc`),
     selSoft('week_reflections', `select=*&week_start=in.(${wk},${prevWk})`),
@@ -786,9 +786,22 @@ async function renderWeek(){
     // exactly what it was — a feature must never break a page that worked.
     selSoft('planned_rounds', `select=id,date,kind,note`
       + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
+    /* A COMP SHE HAS ALREADY ENTERED. Her ask, 5 Sep, was for a "Competition"
+       placeholder alongside 18 holes / 9 holes — but a comp is not a thin
+       intention, it is a `tournaments` row with a name, a venue, a format and
+       the pre/post check-ins hanging off it, and the Weekly Summary already
+       counts this week's in its Tournaments tile. The week GRID was the only
+       page that could not see them.
+
+       So this reads what is already there rather than offering somewhere to
+       type it a second time. Entered once, on the Tournaments page; it appears
+       here by itself, under its real name, and Wes sees it. Nothing to clear,
+       nothing to keep in step. */
+    selSoft('tournaments', `select=id,date,name,type,score,venue`
+      + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
   ]);
   ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || []; wkRounds = wkRounds || [];
-  wkPlanned = wkPlanned || [];
+  wkPlanned = wkPlanned || []; wkTourn = wkTourn || [];
   await refreshQReplies(wk);      // Wes's per-question replies, shown under each
   selectedAid = null;
 
@@ -823,7 +836,13 @@ async function renderWeek(){
        round answers — on a day with two, either reading is a guess, and the
        honest move is to drop one and leave one. */
     const plans  = wkPlanned.filter(r => r.date === d.ymd).slice(rounds.length);
-    const cells  = items.map(pillHtml).join('') + rounds.map(roundPillHtml).join('')
+    /* Tournament first — on a comp day it is the headline, and the drills
+       around it are what she did to get there. It is NOT consumed by the round:
+       the entry and the card are two different facts, and the pill is the only
+       thing on this page that knows what the comp was called. */
+    const comps  = wkTourn.filter(t => t.date === d.ymd);
+    const cells  = comps.map(tournPillHtml).join('')
+                 + items.map(pillHtml).join('') + rounds.map(roundPillHtml).join('')
                  + plans.map(plannedPillHtml).join('');
     h += `<div class="day ${d.isToday?'today':''}" data-drop="${d.i}" onclick="dayTapped(${d.i})">
       <div class="day-h"><b>${d.long}</b><span>${fmtDay(d.d)}${d.isToday?' · today':''}</span></div>
@@ -835,7 +854,7 @@ async function renderWeek(){
   h += `<div class="tray" data-drop="tray" onclick="trayTapped()">
     <div class="ct"><span>Open assignments${tray.length?' · '+tray.length:''}</span>
       <span style="display:flex;gap:6px">
-        ${ME.role === 'student' ? `<button class="btn btns" onclick="event.stopPropagation();addPlannedRound()">＋ Round</button>` : ''}
+        ${ME.role === 'student' ? `<button class="btn btns" onclick="event.stopPropagation();addPlannedRound()">＋ Plan</button>` : ''}
         <button class="btn btns" onclick="event.stopPropagation();go('drills')">＋ From library</button>
       </span></div>
     <div class="pills">${tray.map(pillHtml).join('') || '<span class="empty" style="padding:0;font-size:12px">Nothing waiting. Add from the library.</span>'}</div>
@@ -890,6 +909,26 @@ function roundPillHtml(r){
   </span>`;
 }
 
+/* A COMP, read straight off the Tournaments page — never written from here.
+   Dashed while it is still ahead of her, solid once it has a result or its date
+   has passed: the same "dashed = not yet" grammar the tbc placeholder already
+   teaches, so there is nothing new to learn. Blue, because blue already means
+   competitive golf everywhere in this app.
+
+   `played` matches the Weekly Summary's rule exactly (score entered, or the day
+   is behind us) so the two pages can never disagree about whether a comp has
+   happened. Tapping goes to Tournaments, where it is actually editable. */
+function tournPillHtml(t){
+  const sc     = (t.score || '').trim();
+  const played = !!sc || t.date < todayYmd();
+  const tip    = t.name + (t.venue ? ' · ' + t.venue : '')
+               + ' · ' + (played ? (sc ? 'result ' + sc : 'played') : 'entered');
+  return `<span class="rpill comp ${played?'':'ahead'}" title="${esc(tip)}"
+     onclick="event.stopPropagation();go('tournaments')">
+    <span class="nm">${esc(t.name)}</span><span class="h">${esc(sc || (played ? 'comp' : 'tbc'))}</span>
+  </span>`;
+}
+
 /* ── planned rounds ────────────────────────────────────────
    Her ask, 2 Sep: the shape of the week, visible to Wes when she submits the
    plan. Deliberately the thinnest possible object — a date and a kind. No
@@ -904,7 +943,26 @@ const PLAN_KINDS = [
   {id:'9',        label:'9 holes'},
   {id:'match',    label:'Friendly match'},
   {id:'practice', label:'Practice'},
+  /* A LESSON IS AN ASSIGNMENT SHE SETS HERSELF — her call, 5 Sep, and it is the
+     right one. The four above are round PLACEHOLDERS: they carry no done flag
+     because a golf_rounds row on their date answers them and the pill simply
+     stops rendering. A lesson has no such event, so it has to be ticked — and
+     "a thing on a day that she ticks off" is what `assignments` already is.
+
+     Keeping it in planned_rounds instead meant giving that table a done column
+     AND teaching the day cell that one of its five kinds must be held back from
+     the round-consumes-a-placeholder slice, or an afternoon nine would silently
+     delete the morning's lesson. Needing that exception was the tell.
+
+     As an assignment it inherits everything already built and tested: the tick,
+     the note, drag between days, the tray, the "N placed · N done" count, the
+     purple by-student ring — and it rides along in the submit snapshot, so it
+     actually reaches Wes in the Signal message, which a planned_round never did.
+     It has no drill (drill_id null, `label` carries the name), so it counts as
+     hers, stays outside the coach's quota wheel, and shows under "extra". */
+  {id:'lesson',   label:'Lesson', assignment:true},
 ];
+const planIsAssignment = k => !!(PLAN_KINDS.find(x => x.id === k) || {}).assignment;
 const planLabel = k => (PLAN_KINDS.find(x => x.id === k) || {}).label || k;
 
 function plannedPillHtml(r){
@@ -918,13 +976,14 @@ function plannedPillHtml(r){
 function addPlannedRound(){
   const days = weekDays();
   openSheet(`
-    <div class="sheet-h"><b>Planned round</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="sheet-h"><b>Plan</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <p class="empty" style="padding:0 0 10px">A placeholder so ${esc(TEACHER_NAME)} can see the
-      shape of the week. It clears itself when you enter the round.</p>
+      shape of the week. A round clears itself when you enter it; a lesson you tick off
+      like any other assignment.</p>
     <div class="fr"><label>What</label><select id="pr-kind">
       ${PLAN_KINDS.map(k => `<option value="${k.id}">${k.label}</option>`).join('')}</select></div>
     <div class="fr"><label>Day</label><select id="pr-day">
-      ${days.map(d => `<option value="${d.ymd}" ${d.isToday?'selected':''}>${d.long} · ${fmtDay(d.d)}</option>`).join('')}</select></div>
+      ${days.map(d => `<option value="${d.i}" ${d.isToday?'selected':''}>${d.long} · ${fmtDay(d.d)}</option>`).join('')}</select></div>
     <div class="fr"><label>Note (optional)</label>
       <input type="text" id="pr-note" placeholder="e.g. Wienerberg? / with Oli"></div>
     <div class="rbtns"><button class="btn btnp" onclick="savePlannedRound()">Add</button>
@@ -932,8 +991,19 @@ function addPlannedRound(){
 }
 
 async function savePlannedRound(){
-  const row = {date: gv('pr-day'), kind: gv('pr-kind'), note: gv('pr-note') || null};
-  try { await ins('planned_rounds', row); }
+  const kind = gv('pr-kind'), i = Number(gv('pr-day')), note = gv('pr-note') || null;
+  const day  = weekDays()[i];
+  try {
+    if (planIsAssignment(kind)){
+      // Straight onto the day, not into the tray: she picked a day in the sheet,
+      // and an appointment already booked is not a proposal waiting to be placed.
+      await ins('assignments', {student_id: STUDENT_ID, drill_id: null,
+        week_start: ymd(WEEK), day_index: i, assigned_by: 'student',
+        label: planLabel(kind), note});
+    } else {
+      await ins('planned_rounds', {date: day.ymd, kind, note});
+    }
+  }
   catch(e){ toast('Not added — ' + e.message.slice(0,60)); return; }
   closeSheet(); renderWeek();
 }
@@ -945,10 +1015,19 @@ async function removePlannedRound(id){
   renderWeek();
 }
 
+/* WHAT AN ASSIGNMENT IS CALLED. Almost every one is a drill and takes the
+   drill's name. A LESSON has no drill — it is not a thing in the library, it is
+   an hour with Wes — so it carries its own `label` and drill_id stays null.
+   One helper rather than eight `(a.drills||{}).name` reads, because the summary
+   page has four of them and a nameless pill is the kind of thing that ships. */
+function aName(a, dash){
+  return (a.drills||{}).name || a.label || (dash || 'Drill');
+}
+
 function pillHtml(a){
   const d = a.drills || {};
   return `<span class="pill by-${a.assigned_by} ${a.done?'done':''}" data-aid="${a.id}">
-    <span class="nm">${esc(d.name || 'Drill')}</span>
+    <span class="nm">${esc(aName(a))}</span>
     ${a.done ? '<span class="sc">✓' + (nn(a.score) ? ' '+a.score : '') + '</span>' : ''}
   </span>`;
 }
@@ -1047,12 +1126,17 @@ async function placeAssignment(aid, dayIndex){
 /* ── tick / score / note — silent by design ─────────────────────── */
 function openAssignmentSheet(a){
   const d = a.drills || {};
+  // A LESSON HAS NOTHING TO SCORE. It has no drill, so no scoring_hint and no
+  // category — offering "Score out of ?" on an hour with Wes is a field that
+  // can only be filled in wrongly. Tick, note, delete: that is the whole object.
+  const scored = !!a.drill_id;
   openSheet(`
-    <div class="sheet-h"><b>${esc(d.name||'Drill')}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
-    <div class="empty" style="padding:0 0 12px">${esc(catLabel(d.category))} · assigned by ${esc(a.assigned_by)}${d.description ? '<br>'+esc(d.description) : ''}</div>
+    <div class="sheet-h"><b>${esc(aName(a))}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="empty" style="padding:0 0 12px">${a.drill_id ? esc(catLabel(d.category)) + ' · ' : ''}assigned by ${esc(a.assigned_by)}${d.description ? '<br>'+esc(d.description) : ''}</div>
     <label style="display:flex;align-items:center;gap:10px;font-size:15px;margin-bottom:12px;cursor:pointer">
       <input type="checkbox" id="a-done" ${a.done?'checked':''} style="width:20px;height:20px;accent-color:var(--gn)"> Done
     </label>
+    ${!scored ? '' : `
     <div class="fr"><label>Score${d.scoring_hint ? ' — '+esc(d.scoring_hint) : ''}</label>
       <!-- ± BUTTON, because a phone's number pad has no minus key. Her Best Ball
            score was -2 and the field simply would not accept it, so it went in
@@ -1071,7 +1155,7 @@ function openAssignmentSheet(a){
                value="${nn(a.out_of)?a.out_of:''}" placeholder="—"
                title="Holes or reps this score was measured over (optional)"
                style="flex:0 0 66px">
-      </div></div>
+      </div></div>`}
     <div class="fr"><label>Note</label><textarea id="a-note" rows="2" placeholder="How did it actually go?">${esc(a.note||'')}</textarea></div>
     <div class="rbtns">
       <button class="btn btnp" onclick="saveAssignment(${a.id})">Save</button>
@@ -1130,7 +1214,7 @@ async function submitWeek(){
   const placed = ASSIGN.filter(a => a.day_index != null);
   const snapshot = placed.map(a => ({
     assignment_id: a.id, drill_id: a.drill_id,
-    name: (a.drills||{}).name || null, category: (a.drills||{}).category || null,
+    name: aName(a, null), category: (a.drills||{}).category || null,
     day_index: a.day_index, assigned_by: a.assigned_by,
   }));
   const first = SUBS.length === 0;
@@ -1139,7 +1223,7 @@ async function submitWeek(){
   if (first){
     const byDay = weekDays().map(d => {
       const items = placed.filter(a => a.day_index === d.i);
-      return items.length ? `${d.label}: ${items.map(a=>(a.drills||{}).name).join(', ')}` : null;
+      return items.length ? `${d.label}: ${items.map(a=>aName(a)).join(', ')}` : null;
     }).filter(Boolean);
     const sent = await notify(TEACHER_NAME,
       `Astrid has committed her plan for ${fmtRange(WEEK)} — ${placed.length} session${placed.length===1?'':'s'}.\n\n${byDay.join('\n')}`);
@@ -3579,7 +3663,7 @@ async function renderSummary(){
   const elapsed = Math.min(7, Math.max(0, Math.round((parseYmd(todayYmd()) - WEEK)/86400000) + 1));
   const pace = Math.round(elapsed*100/7);
 
-  const mapA = l => l.map(a => ({done:!!a.done, name:(a.drills||{}).name||'—', score:a.score,
+  const mapA = l => l.map(a => ({done:!!a.done, name:aName(a,'—'), score:a.score,
                                 outOf:a.out_of,
                                 when:(weekDays()[a.day_index]||{}).label, note:a.note}));
 
@@ -3596,12 +3680,12 @@ async function renderSummary(){
     ${unplaced.length ? `<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--b1);
         font-size:11.5px;color:var(--ye)">
       <b>${unplaced.length} still in the tray</b> — counted, not yet on a day:
-      ${unplaced.map(a=>esc((a.drills||{}).name||'?')).join(', ')}
+      ${unplaced.map(a=>esc(aName(a,'?'))).join(', ')}
     </div>` : ''}
     ${extra.length ? `<div style="margin-top:9px;padding-top:8px;border-top:1px solid var(--b1);
         font-size:11.5px;color:var(--mu)">
       <b style="color:#b39ddb">+ ${extraDone}/${extra.length} extra</b> she set herself —
-      not counted in the wheel${extra.length ? ': ' + extra.map(a=>esc((a.drills||{}).name||'?')).join(', ') : ''}
+      not counted in the wheel${extra.length ? ': ' + extra.map(a=>esc(aName(a,'?'))).join(', ')  : ''}
     </div>` : ''}
     <div class="authkey" style="margin-top:9px">
       <span><i style="background:var(--bl)"></i>${esc(TEACHER_NAME)}</span>
