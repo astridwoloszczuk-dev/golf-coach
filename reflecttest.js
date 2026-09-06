@@ -13,9 +13,14 @@
 // not a second event; saveReply and saveFeedback already knew that, this did
 // not. So:
 //
-//   · before the digest → the short pointer (the digest will carry the text);
-//   · after it         → all three answers, plus which copy is current;
-//   · a re-send        → nothing at all.
+//   · before the digest → NOTHING; the digest is about to carry the text;
+//   · after it          → all three answers, plus which copy is current;
+//   · a re-send         → nothing at all.
+//
+// The first of those is her reading and the correct one — "as long as I submit
+// before 4pm he should only receive one". He never did: every week the system
+// worked as designed he got the early pointer AND the digest repeating it, 70
+// minutes apart on 30 Aug.
 //
 //   node reflecttest.js .
 const fs = require('fs');
@@ -58,9 +63,10 @@ const COM  = 'Keep at it - avoid fatalistic thinking ...';
 
 // ⚠ THE REAL HEADER wes_digest.py writes. saveReflection() searches for this
 // exact string to decide whether the digest has gone. If someone reworded the
-// digest, this fixture would still pass while the live app silently fell back
-// to the pointer — so the last check below reads the string out of the app and
-// asserts it is what the digest actually emits, not what this file assumes.
+// digest, this fixture would still pass while the live app sent the fallback
+// EVERY week (it can no longer see that the digest went) — so the last check
+// reads the string out of the app and asserts it is what the digest really
+// emits, not what this file assumes.
 const DIGEST_HEADER = `Astrid — week of ${WK}`;
 
 /* Does the app actually look for that? Read digestGone()'s pattern out of the
@@ -105,16 +111,14 @@ ${pages}
     el('rf_com').value  = ${JSON.stringify(COM)};
   };
 
-  /* ── 1 · BEFORE the digest: the digest will carry it ─────────────── */
+  /* ── 1 · IN TIME: silence. The digest carries it. ────────────────── */
   global.FIX.week_reflections = []; global.FIX.notifications = [];
   await renderWeek(); fillIn();
   global.posted.length = 0;
   await saveReflection(true);
-  const early = toWes();
-  ck('he is told once',                    early.length === 1);
-  ck('it is the short pointer',            /is in the app/.test(early[0] || ''));
-  ck('it carries the commitment',          (early[0]||'').includes('Keep at it'));
-  ck('it does NOT paste all three',        !(early[0]||'').includes('Iron striking'));
+  ck('an early send messages nobody',      toWes().length === 0);
+  ck('but it IS submitted',                global.posted.some(p => p[0]==='week_reflections'
+        && p[1].submitted_at));
 
   /* ── 2 · AFTER the digest: it has to carry the text itself ───────── */
   global.FIX.week_reflections = [];
@@ -144,7 +148,27 @@ ${pages}
   ck('the edit reached the row',           global.posted.some(p => p[0]==='week_reflections'
         && /stop over-reading/.test(p[1].commitment || '')));
 
-  /* ── 4 · a draft is not a send, before or after ──────────────────── */
+  /* ── 4 · IF IT CANNOT TELL, IT SENDS ─────────────────────────────
+     An in-time reflection is deliberately silent, so a blocked read resolving
+     to "not gone" would mean Wes gets nothing at all — the one outcome that
+     cannot be recovered from, since he assigns without her words and neither
+     of them ever finds out why. A duplicate is a bad message, not a lost one. */
+  global.FIX.week_reflections = []; global.FIX.notifications = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, opt) => {
+    if (String(url).includes('/notifications?select=message'))
+      return { ok:false, status:500, json:async()=>({}), text:async()=>'boom' };
+    return realFetch(url, opt);
+  };
+  await renderWeek(); fillIn();
+  global.posted.length = 0;
+  await saveReflection(true);
+  const blind = toWes();
+  ck('a blocked check still messages him', blind.length === 1);
+  ck('and it carries all three',           (blind[0]||'').includes('Iron striking'));
+  global.fetch = realFetch;
+
+  /* ── 5 · a draft is not a send, before or after ──────────────────── */
   global.FIX.week_reflections = [];
   await renderWeek(); fillIn();
   global.posted.length = 0;
@@ -153,7 +177,7 @@ ${pages}
   ck('a draft has no submitted_at',        global.posted.some(p => p[0]==='week_reflections'
         && !p[1].submitted_at));
 
-  /* ── 5 · THE CROSS-FILE CONTRACT ─────────────────────────────────
+  /* ── 6 · THE CROSS-FILE CONTRACT ─────────────────────────────────
      digestGone() matches wes_digest.py's first line. Computed outside the
      harness (see HEADER_OK) by reading the pattern out of app-pages.js and
      comparing it to the header the digest really writes — so a reworded

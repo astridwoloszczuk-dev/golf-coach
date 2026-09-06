@@ -777,15 +777,23 @@ async function refreshQReplies(wk){
    thing, and nothing has to ride along in Wes's message purely so the app can
    recognise its own notifications later.
 
-   FAILS TOWARDS "NOT GONE": a blocked read looks like an empty list and she
-   sends the short pointer, which is the harmless direction — he learns the
-   reflection exists and opens the app. The costly error is the other way,
-   pasting three answers he already read in the digest an hour ago. */
+   FAILS TOWARDS "GONE", hence sel + catch rather than selSoft: selSoft turns a
+   blocked read into [], which is indistinguishable from "no digest yet", and
+   since an in-time reflection is now deliberately silent that would resolve to
+   sending Wes NOTHING. Silence is the one outcome that cannot be recovered
+   from — he assigns without her words and neither of them ever knows why. A
+   duplicate of three answers he read an hour ago is a bad message; it is not a
+   lost one. So: cannot tell → assume it has gone → send. */
 async function digestGone(wk){
-  const rows = await selSoft('notifications',
-    `select=message&recipient=eq.${encodeURIComponent(TEACHER_NAME)}`
-    + `&created_at=gte.${encodeURIComponent(wk)}`) || [];
-  return rows.some(n => String(n.message || '').includes(`Astrid — week of ${wk}`));
+  try {
+    const rows = await sel('notifications',
+      `select=message&recipient=eq.${encodeURIComponent(TEACHER_NAME)}`
+      + `&created_at=gte.${encodeURIComponent(wk)}`) || [];
+    return rows.some(n => String(n.message || '').includes(`Astrid — week of ${wk}`));
+  } catch(e){
+    console.warn('digest check failed, assuming it has gone:', e.message);
+    return true;
+  }
 }
 
 async function saveReflection(send){
@@ -818,24 +826,42 @@ async function saveReflection(send){
     if (prior && prior.submitted_at){
       toast(`Updated — ${TEACHER_NAME} already has it`);
     } else {
-      /* AFTER THE DIGEST, SEND THE WHOLE THING. The digest is the vehicle her
-         answers normally travel in — the 10:00 and 14:00 pings exist to get her
-         in before it leaves. Once it has gone, having told him "No reflection
-         written this week", a pointer saying one exists is the least useful
-         message available: he has to open the app to find out whether it
-         changes what he assigns, and he is assigning within a few hours. */
+      /* THE DIGEST IS THE VEHICLE. Her answers are meant to travel inside it —
+         that is what the 10:00 and 14:00 pings are for, and what her own ping
+         text promises ("before then means he reads it with everything else").
+
+         SO IN TIME MEANS SILENCE. Until 6 Sep 2026 an early send ALSO fired a
+         pointer at him, and the digest then repeated it: he got two messages
+         every week the system worked as designed, 70 minutes apart on 30 Aug,
+         the second containing the very reflection the first announced. Her
+         reading, and the correct one — "as long as I submit before 4pm he
+         should only receive one."
+
+         LATE MEANS SEND THE WHOLE THING. Once the digest has gone, having just
+         told him "No reflection written this week", a pointer saying one now
+         exists is the least useful message available: he is assigning within
+         hours and would have to open the app to learn whether it changes
+         anything.
+
+         What this gives up: if the digest itself fails, an early reflection
+         reaches him through nothing else. Accepted — the digest is hb-wrapped
+         on james-coach, so a failure goes red and is visible, which is how
+         every other James job's failure is handled. A silent duplicate every
+         single week is the worse trade. */
       const late = await digestGone(ymd(WEEK));
-      const trim = s => (s || '').trim().slice(0, 400);
-      const sent = await notify(TEACHER_NAME, late
-        ? `Astrid's reflection for ${fmtRange(WEEK)} — written after today's digest, so it was not in it.\n\n`
+      if (!late){
+        toast(`Sent — it goes out with ${TEACHER_NAME}'s 16:00 digest`);
+      } else {
+        const trim = s => (s || '').trim().slice(0, 400);
+        const sent = await notify(TEACHER_NAME,
+          `Astrid's reflection for ${fmtRange(WEEK)} — written after today's digest, so it was not in it.\n\n`
           + [['What felt good', row.felt_good], ['What was off', row.was_off],
              ['Committing to', row.commitment]]
             .filter(([, v]) => trim(v)).map(([l, v]) => `${l}: ${trim(v)}`).join('\n\n')
-          + `\n\nThe app has the current version.`
-        : `Astrid's reflection for ${fmtRange(WEEK)} is in the app.\n\n`
-          + `Committing to: ${row.commitment}`);
-      toast(sent ? (late ? `Sent — ${TEACHER_NAME} has all three` : 'Sent')
-                 : `Saved (${TEACHER_NAME} not on Signal yet — queued)`);
+          + `\n\nThe app has the current version.`);
+        toast(sent ? `Sent — ${TEACHER_NAME} has all three`
+                   : `Saved (${TEACHER_NAME} not on Signal yet — queued)`);
+      }
     }
   } else toast('Saved');
   renderWeek();
