@@ -768,7 +768,29 @@ async function refreshQReplies(wk){
     + `&question=not.is.null&order=id.asc`) || [];
 }
 
+/* HAS THIS WEEK'S DIGEST ALREADY GONE?
+
+   ⚠ COUPLED TO wes_digest.py's FIRST LINE — `f"Astrid — week of {wk}"`. There
+   is a matching warning in that file. Matching the message's own header is the
+   idiom this app already uses for exactly this question (see saveReply, and
+   #N<id> in notifyNewComp): the line names the week, so it identifies the
+   thing, and nothing has to ride along in Wes's message purely so the app can
+   recognise its own notifications later.
+
+   FAILS TOWARDS "NOT GONE": a blocked read looks like an empty list and she
+   sends the short pointer, which is the harmless direction — he learns the
+   reflection exists and opens the app. The costly error is the other way,
+   pasting three answers he already read in the digest an hour ago. */
+async function digestGone(wk){
+  const rows = await selSoft('notifications',
+    `select=message&recipient=eq.${encodeURIComponent(TEACHER_NAME)}`
+    + `&created_at=gte.${encodeURIComponent(wk)}`) || [];
+  return rows.some(n => String(n.message || '').includes(`Astrid — week of ${wk}`));
+}
+
 async function saveReflection(send){
+  // Read BEFORE the write, because the write is what makes it look sent.
+  const prior = reflFor(ymd(WEEK));
   const row = {
     student_id: STUDENT_ID, week_start: ymd(WEEK),
     felt_good: gv('rf_good') || null,
@@ -782,11 +804,40 @@ async function saveReflection(send){
   }
   await api('week_reflections?on_conflict=week_start', {method:'POST', body:row,
     prefer:'resolution=merge-duplicates,return=minimal'});
-  if (send) await notify(TEACHER_NAME,
-    `Astrid's reflection for ${fmtRange(WEEK)} is in the app.
 
-Committing to: ${row.commitment}`);
-  toast(send ? 'Sent' : 'Saved');
+  if (send){
+    /* EDITS ARE SILENT — the rule saveReply and saveFeedback already follow,
+       and the one this was missing. On 6 Sep 2026 she sent at 16:23 and tidied
+       it at 18:10, and Wes got the same message twice an hour and three
+       quarters apart; that is how the ntfy channel taught her to ignore ntfy.
+       A re-send is an edit of a once-a-week object, not a second event.
+
+       Costs nothing in the pointer case, where the message only ever said "it's
+       in the app". In the fallback case below he holds a copy that an edit can
+       age, so that message says outright which one is current. */
+    if (prior && prior.submitted_at){
+      toast(`Updated — ${TEACHER_NAME} already has it`);
+    } else {
+      /* AFTER THE DIGEST, SEND THE WHOLE THING. The digest is the vehicle her
+         answers normally travel in — the 10:00 and 14:00 pings exist to get her
+         in before it leaves. Once it has gone, having told him "No reflection
+         written this week", a pointer saying one exists is the least useful
+         message available: he has to open the app to find out whether it
+         changes what he assigns, and he is assigning within a few hours. */
+      const late = await digestGone(ymd(WEEK));
+      const trim = s => (s || '').trim().slice(0, 400);
+      const sent = await notify(TEACHER_NAME, late
+        ? `Astrid's reflection for ${fmtRange(WEEK)} — written after today's digest, so it was not in it.\n\n`
+          + [['What felt good', row.felt_good], ['What was off', row.was_off],
+             ['Committing to', row.commitment]]
+            .filter(([, v]) => trim(v)).map(([l, v]) => `${l}: ${trim(v)}`).join('\n\n')
+          + `\n\nThe app has the current version.`
+        : `Astrid's reflection for ${fmtRange(WEEK)} is in the app.\n\n`
+          + `Committing to: ${row.commitment}`);
+      toast(sent ? (late ? `Sent — ${TEACHER_NAME} has all three` : 'Sent')
+                 : `Saved (${TEACHER_NAME} not on Signal yet — queued)`);
+    }
+  } else toast('Saved');
   renderWeek();
 }
 
