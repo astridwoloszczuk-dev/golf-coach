@@ -60,6 +60,112 @@ const HOME_COURSE = /colony|himberg|roehampton/i;   // "away" means none of thes
 // against real rounds by a test harness without dragging in the whole page.
 const gmDate = d => { const [y,m,dd] = String(d).split('-').map(Number); return new Date(y, m-1, dd); };
 
+/* ═══════════════════════════════════════════════════════════════
+   WHAT A ROUND WAS PLAYED TO — one formula, one set of colours.
+
+   Added 12 Sep 2026. Her 89 at Colony West off the red tees was one
+   shot BETTER than her handicap that day and this app coloured it
+   red; her 81 at Brunn was bang on handicap and it coloured white.
+   The colour was raw over-par against fixed cutoffs, blind to which
+   course and which tee — so it was measuring the course as much as
+   the golf, and she is away more often than she used to be.
+
+   "Played to" IS the WHS score differential: (gross − CR) × 113 /
+   slope. Her own proposal was to read the course-handicap table
+   backwards and take the midpoint of the range; that table is this
+   formula rounded to whole shots, so running the formula forwards
+   gives one number instead of a range. Checked on her example: 89 at
+   West/Rot (76.9/141) → 9.7, which is 0.8 better than the 10.5 she
+   was on that day — the "one better" she reported.
+
+   THIS IS NOT A HANDICAP INDEX AND NEVER BECOMES ONE. The rule of
+   6 Aug stands (see the comment above `counting_avg`): the app cannot
+   rebuild her index and must not try. This asks a much smaller
+   question — what was THIS round worth — off two figures printed on
+   the scorecard.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* THE FIXED POST. Her call, 12 Sep: "it correctly identifies that i
+   dont want the colours against a moving flagpost. I want them
+   against my goal of HCP 8.9 for now."
+
+   So it is a constant in the code, not a settings row: it changes
+   about once a year, when the GOAL changes — not per session, and
+   never on its own as her index moves. A settings row would be one
+   more thing to keep updated, which is tracking for its own sake. */
+const HCP_GOAL = 8.9;
+
+/* Course + tee, loaded once per page render. A tee is a different
+   rating, so it is a different row — which also means picking the
+   course fills `tee` for free instead of asking her twice. */
+let COURSES = [], COURSE_BY_ID = {};
+
+async function fetchCourses(){
+  // Soft: before migration 28 has run the table is absent, and every page
+  // must still render — just without a "played to" anywhere.
+  COURSES = await selSoft('courses', 'select=*') || [];
+  COURSE_BY_ID = {};
+  for (const c of COURSES) COURSE_BY_ID[c.id] = c;
+  return COURSES;
+}
+const courseOf    = r => (r && r.course_id != null) ? (COURSE_BY_ID[r.course_id] || null) : null;
+const courseLabel = c => c ? `${c.name} · ${c.tee}` : '';
+
+/* THE ONE READER. Every figure on every page comes through here — if you
+   are about to write `113` somewhere else, don't.
+
+   `course` defaults to the round's own row; pass one explicitly to price a
+   card against a course it wasn't played on (which is what the test does).
+
+   Returns null rather than a wrong number when: the round has no course row
+   (free-text holiday course, or a two-tee course whose tee is unknown), the
+   row has no rating typed in yet, or fewer than 9 holes are scored.
+
+   PARTIAL CARDS ARE SCALED TO 18 and marked, exactly as the Tournaments page
+   already scales the gross — same rule, same minimum, so the two pages cannot
+   disagree about what a 17-hole card is worth. No 9-hole ratings: her nine-hole
+   comps are played on half of an 18-hole course and the 18-hole rating is the
+   honest yardstick for them.
+
+   NO NET-DOUBLE-BOGEY CAP, although the stroke index is on her sheets: the cap
+   needs her playing handicap ON THE DAY, which is the moving post she has just
+   rejected. Uncapped is a little harsh on blow-up rounds and exact on good
+   ones, which is the right way round for a number she is chasing down. */
+function playedTo(r, course){
+  const c = (course === undefined) ? courseOf(r) : course;
+  if (!c || c.cr == null || c.slope == null) return null;
+  const p = ((r && r.holes_data) || []).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
+  if (p.length < 9) return null;
+  const gross18 = p.reduce((a,h)=>a+Number(h.score), 0) * 18 / p.length;
+  return {val: (gross18 - Number(c.cr)) * 113 / Number(c.slope),
+          holes: p.length, scaled: p.length !== 18};
+}
+
+const playedToTxt = pt => (pt.scaled ? '~' : '') + pt.val.toFixed(1);
+
+/* FOUR BANDS, TWO SHOTS WIDE, AROUND THE GOAL — hers verbatim: "0 to +2 away
+   from 8.9 amber, red above, light green for 0 to −2, bright green below".
+   Boundaries inclusive downward, so 8.9 is light green and 10.9 is amber.
+
+   Compared in TENTHS as integers, not in floats, and that is not paranoia
+   about 8.9−2: it is so the colour matches the number she can actually SEE.
+   The chip prints one decimal, so a 6.94 and a 6.89 both read "6.9" — banding
+   the raw value would paint those two identical-looking chips different
+   colours, which teaches her to distrust the colour.
+
+   EXPECT MOST SOCIAL AND MATCHPLAY COLONY ROUNDS GREEN AND THE COMPS
+   AMBER/RED. That is not a calibration problem to be fixed — it is her choke
+   signature (matchplay +7.5 vs stroke comp +17.4 per 18, from the July
+   analysis) finally showing up in colour. The bands are set against the goal,
+   never tuned to spread the distribution. */
+function playedToBand(v){
+  const t = Math.round(v * 10), g = Math.round(HCP_GOAL * 10);
+  return t <  g - 20 ? 'var(--gn)'
+       : t <= g      ? 'var(--gn2)'
+       : t <= g + 20 ? 'var(--ye)'
+       : 'var(--rd)';
+}
+
 // A metric returns {val, txt, state} — state is 'good' | 'warn' | 'bad' | null.
 // null means not enough evidence yet, and the title stays neutral: colouring a
 // goal off two data points teaches her to distrust the colour.
@@ -203,47 +309,50 @@ const GOAL_METRICS = {
      rounds only — competition, stroke format, not matchplay, not social — and
      asks whether their scoring sits where it needs to.
 
-     COURSE-ADJUSTED, her numbers. Colony and Himberg rate well above par, so
-     +10 there is the same golf as +5 somewhere easier; the boundaries move by
-     five strokes between the two. Rather than judge each round against its own
-     course, every round is normalised onto the "other courses" scale by taking
-     five off the Colony/Himberg ones, so a mixed set averages honestly:
+     IN "PLAYED TO" SINCE 12 Sep 2026, and this is the tile the courses table
+     was really built for. It used to read over-par and knock a flat five shots
+     off anything matching /colony|himberg/ — a hard-coded stand-in for exactly
+     the rating data the app now holds, which could not tell red from black at
+     the same club and knew nothing about Brunn or Passeiertal. That regex is
+     gone. Each round is now priced against the course AND tee it was actually
+     played on, so a mixed set averages honestly without anything being
+     normalised onto a pretend scale.
 
-       Colony / Himberg      green ~+10   amber ~+15
-       everywhere else       green ~+5    amber ~+10
-
-     Her own reasoning for those levels: trending around +15 at Colony gets her
-     to a sub-9 index eventually — twenty rounds of it, realistically two years,
-     hence amber. Around +9 or +10 there translates to an index near 4 or 5 and
-     gets her there far faster, hence green.
+     JUDGED AGAINST THE GOAL, NOT AGAINST A MOVING INDEX: good is at or under
+     8.9, warn within two of it, bad beyond. Those are the same bands the round
+     chips use, so the tile and the rounds under it cannot tell different
+     stories.
 
      COMPLETE CARDS ONLY, FOR THE FORMAT PLAYED — 9 holes or 17+, nothing in
      between. Her three Wednesday-afternoon 9-hole stableford comps at Colony
      were played DELIBERATELY to get counting cards in (there are very few
      handicap-relevant events to enter), so throwing them away would discard
-     exactly the effort the goal is asking for. They scale honestly too: +12 per
-     18, which is "played well, not great" and matches the ~20 points she
-     returned. What gets excluded is the genuinely partial — an 8-hole card, or
-     an 18-hole competition with 15 holes entered — where the missing holes are
-     not a shorter format but a gap. Last 8, so it tracks current form. */
+     exactly the effort the goal is asking for. What gets excluded is the
+     genuinely partial — an 8-hole card, or an 18-hole competition with 15 holes
+     entered — where the missing holes are not a shorter format but a gap.
+     Last 8, so it tracks current form.
+
+     A ROUND WITH NO FIGURE IS SKIPPED, NOT ZEROED — no tee picked yet, no
+     rating typed in yet, or a free-text course. It still counts in the "only N
+     counting rounds" line, so a thin tile says so rather than quietly averaging
+     two rounds and looking confident. */
   counting_avg(R){
-    const HOME_ADJ = /colony|himberg/i;
     const vals = [];
     for (const r of R){
       if (r.stats_excluded || !r.comp || r.matchplay) continue;
       const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
       if (!(p.length === 9 || p.length >= 17)) continue;   // complete for its format
-      const per18 = p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * 18 / p.length;
-      // normalise onto the "other courses" scale
-      vals.push({d: r.date, v: per18 - (HOME_ADJ.test(r.course||'') ? 5 : 0)});
+      const pt = playedTo(r);
+      if (!pt) continue;
+      vals.push({d: r.date, v: pt.val});
     }
     if (vals.length < 3)
-      return {txt:`only ${vals.length} counting round${vals.length===1?'':'s'}`, state:null};
+      return {txt:`only ${vals.length} counting round${vals.length===1?'':'s'} rated`, state:null};
     const last = vals.sort((a,z)=>a.d.localeCompare(z.d)).slice(-8);
     const avg = last.reduce((a,x)=>a+x.v, 0) / last.length;
     return {val: avg,
-            txt: `counting rounds ${avg>0?'+':''}${avg.toFixed(1)} adj · needs +5`,
-            state: avg <= 5 ? 'good' : avg <= 10 ? 'warn' : 'bad'};
+            txt: `played to ${avg.toFixed(1)} avg · goal ${HCP_GOAL}`,
+            state: avg <= HCP_GOAL ? 'good' : avg <= HCP_GOAL + 2 ? 'warn' : 'bad'};
   },
 
   /* BREAKING 80 is a GROSS SCORE, so read the gross score. Nothing here is
@@ -271,16 +380,29 @@ const GOAL_METRICS = {
   },
 
   /* Competition scoring minus social scoring. The choke signature as one
-     number, and closing it is the two-year goal. Currently 3.8 shots. */
+     number, and closing it is the two-year goal. Currently 3.8 shots.
+
+     IN HANDICAP UNITS SINCE 12 Sep 2026, not over-par per 18. It was pooling
+     every hole she has played on either side and comparing the two averages,
+     which quietly made this a measure of WHERE she competes as much as of how:
+     her comps are increasingly away, her social golf is almost all Colony, and
+     a course difference between the two sides landed in the number as if it
+     were nerves. Priced per round against its own course and tee, the
+     comparison is course-neutral and the gap is only the thing it claims to be.
+
+     THRESHOLDS UNCHANGED (≤2 good, ≤4 warn) — the unit is different but the
+     scale is not: a differential is in strokes, so "two shots worse under a
+     card" still means two shots.
+
+     Minimum TWO RATED ROUNDS a side. The old gate was 36 holes each, which is
+     the same evidence expressed in the only unit that was available then. */
   comp_social_gap(R){
-    const agg = f => { let n=0,d=0;
+    const agg = f => { const v = [];
       for (const r of R){ if (r.stats_excluded || !f(r)) continue;
-        for (const h of (r.holes_data||[])){
-          if (String(h.par??'')==='' || String(h.score??'')==='') continue;
-          n++; d += Number(h.score) - Number(h.par); } }
-      return n >= 36 ? d*18/n : null; };
+        const pt = playedTo(r); if (pt) v.push(pt.val); }
+      return v.length >= 2 ? v.reduce((a,x)=>a+x,0)/v.length : null; };
     const c = agg(r=>r.comp), so = agg(r=>!r.comp);
-    if (c == null || so == null) return {txt:'need more of both', state:null};
+    if (c == null || so == null) return {txt:'need more rated rounds of both', state:null};
     const gap = c - so;
     return {val: gap, txt: `${gap>0?'+':''}${gap.toFixed(1)} shots worse under a card`,
             state: gap <= 2 ? 'good' : gap <= 4 ? 'warn' : 'bad'};
@@ -344,11 +466,14 @@ function goalMetric(g, rounds){
 }
 
 async function renderGoals(){
-  // rounds come along now: every metric on this page is computed from them
+  // rounds come along now: every metric on this page is computed from them,
+  // and the courses with them — two of the metrics price a round against its
+  // own course and tee, and read COURSE_BY_ID to do it.
   let gRounds;
   [GOALS, gRounds] = await Promise.all([
     sel('goals', 'select=*&order=horizon.asc,sort.asc,id.asc'),
     fetchRounds(),
+    fetchCourses(),
   ]);
   GOALS = GOALS || []; gRounds = gRounds || [];
   const canEdit = ME.role === 'teacher' || GOALS_STUDENT_WRITABLE;
@@ -1951,6 +2076,13 @@ async function sendRoundToWes(id, again){
   const when = r.date ? fmtDay(parseYmd(r.date)) : 'today';
   const bits = [];
   if (s.delta !== null) bits.push(`${s.delta>0?'+':''}${s.delta} to par off ${s.n} holes`);
+  /* ADDED BESIDE THE OVER-PAR, NEVER INSTEAD OF IT — her instruction, 12 Sep:
+     "add, not replace". Over-par is what she and Wes say out loud; "played to"
+     is the course-fair reading, and he needs both to have the same
+     conversation. No colour and no band words: those are an app affordance,
+     Wes reads numbers. A round with no figure simply doesn't carry the bit. */
+  const pt = playedTo(r);
+  if (pt) bits.push(`played to ${playedToTxt(pt)}`);
   if (s.gir   !== null) bits.push(`GIR ${s.gir}`);
   if (s.fw    !== null) bits.push(`fairways ${s.fw}`);
   if (s.putts !== null) bits.push(`${s.putts} putts`);
@@ -2043,6 +2175,7 @@ function roundsLegendHtml(){
 async function renderRounds(){
   if (roundMode === 'select' && editId === null){
     ROUNDS = (await fetchRounds('', true)).reverse();   // newest first
+    await fetchCourses();
     if (ME.role === 'student') await loadCompSent();
   }
 
@@ -2439,6 +2572,38 @@ function holesSummary(r, s){
   return { label, title };
 }
 
+/* ── the "played to" chip ────────────────────────────────────────
+   Three states, and the two that are not a number are TAPPABLE, because each
+   one names the single missing thing and takes her straight to where it goes:
+
+     a figure   coloured against the 8.9 goal
+     tee?       the course is known, which tee is not (a two-tee course whose
+                historic tee the migration refused to guess) → opens the round
+     rating?    the course+tee row exists but its CR/slope have never been
+                typed in → opens that course's sheet, with her card in hand
+
+   Nothing shows at all for a free-text course or a card under 9 holes: there
+   is no missing tap there, so a prompt would just be noise.
+
+   The over-par figure beside it STAYS. It is what she and Wes say out loud;
+   this is the course-fair reading. Add, never replace — her words, 12 Sep. */
+function playedToChipHtml(r){
+  const pt = playedTo(r);
+  if (pt)
+    return `<span style="font-weight:700;color:${playedToBand(pt.val)}"
+      title="What this round was worth as a handicap: (gross − course rating) × 113 / slope, against her goal of ${HCP_GOAL}.${
+        pt.scaled ? ` Scaled to 18 from ${pt.holes} scored holes.` : ''}">played to ${playedToTxt(pt)}</span>`;
+  const c = courseOf(r);
+  if (c && (c.cr == null || c.slope == null))
+    return `<span class="btn btns" style="padding:0 6px;cursor:pointer"
+      onclick="editCourse(${c.id})" title="No course rating for ${esc(courseLabel(c))} yet — tap to enter it from the scorecard">rating?</span>`;
+  // Course named but no row: only worth asking when a row could exist for it.
+  if (!c && r.course && COURSES.some(x => x.name === r.course))
+    return `<span class="btn btns" style="padding:0 6px;cursor:pointer"
+      onclick="editRound(${r.id})" title="Which tee? Pick the course again to set it">tee?</span>`;
+  return '';
+}
+
 function historyHtml(){
   if (!ROUNDS.length) return `<div class="card"><div class="empty">No rounds logged yet.</div></div>`;
   let h=`<div class="card"><div class="ct">Round history · ${ROUNDS.length}</div>`;
@@ -2473,6 +2638,7 @@ function historyHtml(){
              total up from a card with conceded holes in it invents the very
              number we declined to invent per hole. -->
         ${s.delta!==null?`<span style="font-weight:700;color:var(--tx)">${Number(s.delta)>0?'+':''}${s.delta} par${(!r.matchplay&&s.n<18)?' ('+((dScaled>0?'+':'')+Number(dScaled).toFixed(1))+'/18)':''}</span>`:''}
+        ${playedToChipHtml(r)}
         ${s.gir!==null?`<span>GIR:${s.gir}</span>`:''}
         ${s.fw!==null?`<span>FW:${s.fw}</span>`:''}
         ${s.ud!==null?`<span>U&amp;D:${s.ud}</span>`:''}
@@ -2503,12 +2669,162 @@ function toggleFocus(p){ const b=el(p+'_focus'); if(b) b.style.display=(el(p+'_p
 function getFoci(p){ return Array.from(document.querySelectorAll('#'+p+'_focus .fpill.sel')).map(b=>b.dataset.f); }
 function setFoci(p,arr){ (arr||[]).forEach(f=>{const b=document.querySelector('#'+p+'_focus .fpill[data-f="'+f+'"]'); if(b) b.classList.add('sel');}); }
 
+/* ── the course picker ──────────────────────────────────────────
+   Replaces the free-text Course box on both round forms, 12 Sep 2026. It
+   removes two jobs rather than adding one, which is the only reason it earns
+   its place: forty-eight rounds hold about fifteen spellings of Colony West,
+   and the Tee field was empty in every single one of them. Picking a row
+   writes the canonical name AND the tee, so neither is ever typed again.
+
+   ORDERED BY LAST PLAYED, so the course she is standing on is almost always
+   the first item — one tap for the common case, which is why this needs no
+   pre-filling from the tournament (a non-goal she may well ask for again).
+
+   TWO ESCAPE HATCHES, both inside the one control, because a second button
+   would be a second decision:
+     "somewhere else…"  free text, no course_id — a one-off holiday course.
+                        It gets no "played to" figure, which is the honest
+                        answer for a course with no rating behind it.
+     "＋ add course"    the sheet below. That sheet is also the ONLY place a
+                        rating is entered, from the card, once per course+tee.
+
+   The old Tee text box is GONE from the quick-add form. It was a field she
+   never filled in because the answer is a property of the course row, not of
+   the round. */
+function coursePickerOptionsHtml(sel){
+  const last = {};
+  for (const r of (ROUNDS || [])){
+    if (r.course_id == null || !r.date) continue;
+    if (!last[r.course_id] || r.date > last[r.course_id]) last[r.course_id] = r.date;
+  }
+  const ordered = COURSES.slice().sort((a, z) =>
+    String(last[z.id] || '').localeCompare(String(last[a.id] || ''))
+    || String(a.name).localeCompare(String(z.name))
+    || String(a.tee).localeCompare(String(z.tee)));
+  return `<option value="">— pick a course —</option>`
+    + ordered.map(c => `<option value="${c.id}"${String(sel)===String(c.id)?' selected':''}>${esc(courseLabel(c))}</option>`).join('')
+    + `<option value="__other">somewhere else…</option>`
+    + `<option value="__add">＋ add course</option>`;
+}
+
+function coursePickerHtml(p){
+  return `<div class="fr"><label>Course</label>
+    <div style="display:flex;gap:6px;align-items:center">
+      <select id="${p}_cs" style="flex:1;min-width:0" onchange="onCoursePick('${p}')">${coursePickerOptionsHtml('')}</select>
+      <button type="button" class="btn btns" id="${p}_cedit" style="display:none"
+        onclick="editCourseFromPick('${p}')" title="Course rating and slope for this tee">✎</button>
+    </div>
+    <input type="text" id="${p}_c" placeholder="Course name" style="display:none;margin-top:6px"></div>`;
+}
+
+function onCoursePick(p){
+  const s = el(p+'_cs');
+  if (!s) return;
+  if (s.value === '__add'){
+    // Nothing is chosen until the sheet saves something — otherwise cancelling
+    // out of it would leave the form claiming a course called "＋ add course".
+    s.value = '';
+    openCourseSheet(null, p);
+    return;
+  }
+  const free = el(p+'_c'), edit = el(p+'_cedit');
+  if (free) free.style.display = (s.value === '__other') ? '' : 'none';
+  if (edit) edit.style.display = (s.value && s.value !== '__other') ? '' : 'none';
+}
+
+/* What the save writes. A picked row sets all three columns; "somewhere else"
+   keeps the free text and leaves course_id null, so it can never point at a
+   rating that isn't its own. */
+function coursePickValue(p){
+  const s = el(p+'_cs'), v = s ? s.value : '';
+  if (v && v !== '__other' && v !== '__add'){
+    const c = COURSE_BY_ID[Number(v)];
+    if (c) return {course_id: c.id, course: c.name, tee: c.tee};
+  }
+  return {course_id: null, course: gv(p+'_c') || null, tee: null};
+}
+
+/* Re-opening a round. A round with a row pre-selects it. A round with a course
+   NAME but no row — the historic Colony and Brunn rounds whose tee the
+   migration refused to guess, the ones showing `tee?` — lands on "somewhere
+   else" with its name kept, so saving without touching it loses nothing, and
+   the right row is one tap away at the top of the list. */
+function setCoursePick(p, r){
+  const s = el(p+'_cs');
+  if (!s) return;
+  if (r && r.course_id != null && COURSE_BY_ID[r.course_id]) s.value = String(r.course_id);
+  else if (r && r.course){ s.value = '__other'; if (el(p+'_c')) el(p+'_c').value = r.course; }
+  else s.value = '';
+  onCoursePick(p);
+}
+
+/* ── the course sheet — where a rating is entered ────────────────
+   Name, tee, par, course rating, slope. No page, no nav entry: it is opened
+   from the picker (＋ add, or ✎ on the selected row) and from the `rating?`
+   chip on a round in the history, which is the moment she is most likely to
+   have the card in her hand.
+
+   CR AND SLOPE ARE ALL OR NOTHING. One without the other produces no figure at
+   all, so accepting a half-filled pair would mean a course that looks entered
+   and still reads `rating?` for ever. */
+let courseSheetFor = null;      // picker prefix to select into once saved
+
+function openCourseSheet(id, forPrefix){
+  courseSheetFor = forPrefix || null;
+  const c = (id != null && COURSE_BY_ID[id]) ? COURSE_BY_ID[id] : null;
+  openSheet(`
+    <div class="sheet-h"><b>${c ? 'Course rating' : 'Add a course'}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="g2">
+      <div class="fr"><label>Course</label><input type="text" id="c-name" maxlength="60" placeholder="GC Brunn" value="${esc(c?c.name:'')}"></div>
+      <div class="fr"><label>Tee</label><input type="text" id="c-tee" maxlength="20" placeholder="Rot" value="${esc(c?c.tee:'')}"></div>
+    </div>
+    <div class="g2">
+      <div class="fr"><label>Par</label><input type="number" id="c-par" min="54" max="80" placeholder="72" value="${c&&c.par!=null?c.par:''}"></div>
+      <div class="fr"><label>Course rating</label><input type="number" step="0.1" id="c-cr" placeholder="76.9" value="${c&&c.cr!=null?c.cr:''}"></div>
+    </div>
+    <div class="fr"><label>Slope</label><input type="number" id="c-slope" min="55" max="155" placeholder="141" value="${c&&c.slope!=null?c.slope:''}"></div>
+    <p class="empty" style="padding:2px 0 10px;font-size:12px">Both figures are printed on the scorecard for this tee. Par is optional — the maths doesn't use it.</p>
+    <div class="rbtns"><button class="btn btnp" onclick="saveCourse(${c?c.id:'null'})">Save</button>
+      <button class="btn" onclick="closeSheet()">Cancel</button></div>`);
+}
+function editCourse(id){ openCourseSheet(id, null); }
+function editCourseFromPick(p){
+  const s = el(p+'_cs');
+  if (s && s.value && s.value !== '__other') openCourseSheet(Number(s.value), p);
+}
+
+async function saveCourse(id){
+  const name = gv('c-name'), tee = gv('c-tee');
+  if (!name || !tee){ toast('A course needs a name and a tee'); return; }
+  const cr = gv('c-cr'), slope = gv('c-slope');
+  if ((cr === '') !== (slope === '')){ toast('Course rating and slope go in together'); return; }
+  const row = {name, tee, par: gv('c-par') === '' ? null : Number(gv('c-par')),
+               cr: cr === '' ? null : Number(cr), slope: slope === '' ? null : Number(slope)};
+  const saved = id != null ? await upd('courses', 'id=eq.'+id, row) : await ins('courses', row);
+  const newId = id != null ? id : (Array.isArray(saved) && saved[0] ? saved[0].id : null);
+  await fetchCourses();
+  closeSheet();
+  toast('Course saved');
+  const p = courseSheetFor;
+  courseSheetFor = null;
+  if (p && el(p+'_cs')){
+    /* PATCHED IN PLACE, never re-rendered. renderRounds() would rebuild the
+       card form from scratch and throw away a half-entered scorecard — which
+       is exactly when she'd be reaching for "＋ add course", standing on the
+       first tee of somewhere new. Only the <select>'s options are replaced. */
+    el(p+'_cs').innerHTML = coursePickerOptionsHtml(newId);
+    el(p+'_cs').value = String(newId);
+    onCoursePick(p);
+    return;
+  }
+  renderRounds();
+}
+
 function simpleFormHtml(){
   return `<div class="card"><div class="ct">${editId!==null?'Edit round':'Quick add'}</div>
     <div class="g2"><div class="fr"><label>Date</label><input type="date" id="sr_d" value="${editId===null?todayYmd():''}"></div>
-      <div class="fr"><label>Course</label><input type="text" id="sr_c" placeholder="Fontana"></div></div>
-    <div class="g2"><div class="fr"><label>Tee</label><input type="text" id="sr_t" placeholder="e.g. Yellow"></div>
       <div class="fr"><label>Holes</label><select id="sr_h"><option value="9">9 holes</option><option value="18" selected>18 holes</option></select></div></div>
+    ${coursePickerHtml('sr')}
     <div class="fr" style="display:flex;align-items:center;gap:18px;margin:6px 0 14px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="sr_co" style="width:18px;height:18px;accent-color:var(--ac)">Competitive</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="sr_pr" onchange="toggleFocus('sr')" style="width:18px;height:18px;accent-color:var(--gn)">On-course practice</label>
@@ -2548,7 +2864,7 @@ function cardFormHtml(){
          month down the feed. Backdating is now a deliberate act; today is free.
          Editing overwrites this with the round's own date just below. -->
     <div class="g2"><div class="fr"><label>Date</label><input type="date" id="rf_d" value="${editId===null?todayYmd():''}"></div>
-      <div class="fr"><label>Course</label><input type="text" id="rf_c" placeholder="Fontana"></div></div>
+      ${coursePickerHtml('rf')}</div>
     <div class="fr" style="display:flex;align-items:center;gap:18px;margin:6px 0 14px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="rf_co" style="width:18px;height:18px;accent-color:var(--ac)">Competitive</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="rf_pr" onchange="toggleFocus('rf')" style="width:18px;height:18px;accent-color:var(--gn)">On-course practice</label>
@@ -2624,8 +2940,7 @@ function fillFormFromRound(){
   if (!r) return;
   if (r.is_simple){
     if(el('sr_d')) el('sr_d').value=r.date||'';
-    if(el('sr_c')) el('sr_c').value=r.course||'';
-    if(el('sr_t')) el('sr_t').value=r.tee||'';
+    setCoursePick('sr', r);
     if(el('sr_h')) el('sr_h').value=String(r.holes||18);
     if(el('sr_co'))el('sr_co').checked=!!r.comp;
     if(el('sr_pr'))el('sr_pr').checked=!!r.practice;
@@ -2639,7 +2954,7 @@ function fillFormFromRound(){
       document.querySelectorAll('#pg-rounds .fpill[data-tk]').forEach(b=>b.classList.toggle('sel', b.dataset.tk===r.takeaway)); }
   } else {
     if(el('rf_d')) el('rf_d').value=r.date||'';
-    if(el('rf_c')) el('rf_c').value=r.course||'';
+    setCoursePick('rf', r);
     if(el('rf_n')) el('rf_n').value=r.notes||'';
     if(el('rf_tks')) el('rf_tks').value=r.takeaway_shot||'';
     ['shape','pattern','club'].forEach((id,ix)=>{ const v=[r.shape_control,r.miss_pattern,r.club_selection][ix];
@@ -2809,8 +3124,8 @@ async function saveSimpleRound(){
   if(!d){ toast('Pick a date'); return; }
   const tk=takeawayRow('sr');
   if(!tk){ toast('Both the theme and the one shot are needed'); return; }
-  await saveRoundRow({ ...tk,
-    date:d, course:gv('sr_c')||null, tee:gv('sr_t')||null, holes:Number(gv('sr_h'))||18,
+  await saveRoundRow({ ...tk, ...coursePickValue('sr'),
+    date:d, holes:Number(gv('sr_h'))||18,
     comp:el('sr_co').checked, practice:el('sr_pr').checked,
     practice_focus:getFoci('sr'), practice_drill:(el('sr_drill')?el('sr_drill').value.trim():'')||null,
     notes:gv('sr_n')||null, holes_data:null, is_simple:true,
@@ -2837,8 +3152,8 @@ async function saveCardRound(){
   if(!tk){ toast('Both the theme and the one shot are needed'); return; }
   const bad = holes_data.filter(h => h.score!=='' && (h.par===''||h.par==null));
   if (bad.length && !confirm(bad.length+' hole(s) have a score but no par — those won\'t be counted. Save anyway?')) return;
-  await saveRoundRow({ ...tk,
-    date:d, course:gv('rf_c')||null, comp:el('rf_co').checked, practice:el('rf_pr').checked,
+  await saveRoundRow({ ...tk, ...coursePickValue('rf'),
+    date:d, comp:el('rf_co').checked, practice:el('rf_pr').checked,
     practice_focus:getFoci('rf'), practice_drill:(el('rf_drill')?el('rf_drill').value.trim():'')||null,
     notes:gv('rf_n')||null, holes_data, is_simple:false, holes:cardHoles,
     matchplay:el('rf_mp')?el('rf_mp').checked:false,
@@ -2997,9 +3312,24 @@ Return ONLY valid JSON, no markdown:
   if(raw.startsWith('```')) raw=raw.split('\n').slice(1,-1).join('\n');
   return JSON.parse(raw);
 }
+// A scanned course name → the shape setCoursePick() wants. Only a single-tee
+// exact name match resolves to a row; otherwise it is free text.
+function scanCourseGuess(name){
+  const hits = COURSES.filter(c => String(c.name).toLowerCase() === String(name).trim().toLowerCase());
+  return hits.length === 1 ? {course_id: hits[0].id, course: hits[0].name}
+                           : {course_id: null, course: name};
+}
+
 function fillFromScan(d){
   if(d.date&&el('rf_d'))   el('rf_d').value=d.date;
-  if(d.course&&el('rf_c')) el('rf_c').value=d.course;
+  /* THE SCAN LANDS ON THE SAME PICKER as everything else — it does not get a
+     free-text back door. A name off a photographed card is a guess at a
+     spelling, and it cannot know the TEE at all, so an exact match on an
+     existing course name picks that row only when there is exactly one tee for
+     it; anything else lands on "somewhere else" with the scanned name filled
+     in, for her to correct with one tap. Nothing here writes a course_id the
+     card did not actually prove. */
+  if(d.course) setCoursePick('rf', scanCourseGuess(d.course));
   if(d.notes&&el('rf_n'))  el('rf_n').value=d.notes;
   if(el('rf_co')) el('rf_co').checked=!!d.comp;
   if(el('rf_pr')) el('rf_pr').checked=!!d.practice;
@@ -3164,6 +3494,8 @@ async function renderTournaments(){
     // her rounds, so a tournament can show what she actually shot rather than
     // asking her to type the score a second time
     fetchRounds(),
+    // and the ratings, so the line under the gross can say what it was worth
+    fetchCourses(),
   ]);
   TOURN = TOURN || []; CHECKINS = CHECKINS || []; TROUNDS = TROUNDS || [];
   const today = todayYmd();
@@ -3235,6 +3567,8 @@ function tournamentResult(t){
     holes: p.length,
     gross: Math.round(p.reduce((a,h)=>a+Number(h.score),0) * k),
     delta: p.reduce((a,h)=>a+(Number(h.score)-Number(h.par)),0) * k,
+    // the round itself, so the caller can price it without finding it twice
+    round: r,
   };
 }
 
@@ -3251,13 +3585,26 @@ function tournamentResultHtml(t){
   if (R.kind === 'typed')
     return `<div class="tscore">${esc(R.text)}</div>`;
 
-  const col = R.delta <= 6 ? 'var(--gn)' : R.delta <= 12 ? 'var(--tx)' : 'var(--rd)';
-  const d = `${R.delta>0?'+':''}${R.kind==='prorated' ? R.delta.toFixed(1) : R.delta}`;
-  return `<div class="tscore" style="color:${col}${R.kind==='prorated'?';opacity:.82':''}"
+  /* THE GROSS IS THE BIG FIGURE AND IT STAYS PLAIN. What changed on 12 Sep
+     2026 is the line under it: it used to repeat the over-par and colour the
+     whole tile against flat cutoffs (green ≤ +6, red > +12) that knew nothing
+     about the course or the tee. Those cutoffs are what marked her 89 at
+     Colony West red on a day she beat her handicap by a shot.
+
+     Now the sub-line says what the round was PLAYED TO and carries the colour,
+     against the 8.9 goal. Where there is no figure — no tee picked, no rating
+     typed in, a free-text course — the sub-line simply isn't there; nothing
+     says "n/a" and nothing guesses. The scaled marker survives that case,
+     because `~89 · from 9h` is a fact about the gross itself. */
+  const pt = R.round ? playedTo(R.round) : null;
+  const sub = pt
+    ? `<div style="font-size:9px;font-weight:600;color:${playedToBand(pt.val)}">played to ${playedToTxt(pt)}${
+        pt.scaled ? ` · from ${pt.holes}h` : ''}</div>`
+    : (R.kind === 'prorated'
+        ? `<div style="font-size:9px;font-weight:400;color:var(--ye)">from ${R.holes}h</div>` : '');
+  return `<div class="tscore" style="color:var(--tx)${R.kind==='prorated'?';opacity:.82':''}"
       title="${R.kind==='prorated' ? R.holes+' holes played, scaled to 18' : 'full 18 holes'}">
-    ${R.kind==='prorated'?'~':''}${R.gross}
-    <div style="font-size:9px;font-weight:400;color:${R.kind==='prorated'?'var(--ye)':'var(--mu)'}">
-      ${d}${R.kind==='prorated' ? ` · from ${R.holes}h` : ''}</div></div>`;
+    ${R.kind==='prorated'?'~':''}${R.gross}${sub}</div>`;
 }
 
 function tournamentRow(t, isFuture){
