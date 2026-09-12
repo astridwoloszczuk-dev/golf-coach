@@ -2772,12 +2772,38 @@ let courseSheetFor = null;      // picker prefix to select into once saved
 function openCourseSheet(id, forPrefix){
   courseSheetFor = forPrefix || null;
   const c = (id != null && COURSE_BY_ID[id]) ? COURSE_BY_ID[id] : null;
+  /* NAME AND TEE ARE THE ROW'S IDENTITY, so on an EXISTING row they are shown
+     and not editable — they stay as hidden fields so the save path is the same
+     one for both cases.
+
+     They were editable until Astrid asked, on 12 Sep within a minute of opening
+     it, whether CR and slope change with the tee. They do, which is the whole
+     point of the table — but the sheet let her answer that question by typing a
+     different tee into a row that already belonged to another one, and it broke
+     both ways. On GC Brunn, where both tees exist, the unique index rejected it
+     and (with no catch on the save) NOTHING happened, silently. On the six
+     courses seeded with a single Rot row it would have SUCCEEDED: the row would
+     quietly change tee, and every round pointing at it would claim a tee she
+     never played, priced off a rating for a different one.
+
+     Switching tee is a different row, so it is a different pick — hence the
+     signpost rather than a second control in here. */
+  const other = c ? COURSES.filter(x => x.name === c.name && x.id !== c.id) : [];
   openSheet(`
     <div class="sheet-h"><b>${c ? 'Course rating' : 'Add a course'}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
-    <div class="g2">
-      <div class="fr"><label>Course</label><input type="text" id="c-name" maxlength="60" placeholder="GC Brunn" value="${esc(c?c.name:'')}"></div>
-      <div class="fr"><label>Tee</label><input type="text" id="c-tee" maxlength="20" placeholder="Rot" value="${esc(c?c.tee:'')}"></div>
-    </div>
+    ${c ? `<div class="fr" style="margin-bottom:12px">
+      <label>Course</label>
+      <div style="font-size:15px;font-weight:700">${esc(c.name)} · ${esc(c.tee)}</div>
+      <div style="font-size:11.5px;color:var(--mu);margin-top:3px">
+        A tee is its own rating, so it is its own row.${other.length
+          ? ` This course also has <b>${other.map(x=>esc(x.tee)).join('</b>, <b>')}</b> — pick it in the Course list to give it its own figures.`
+          : ` To add another tee here, use <b>＋ add course</b> in the Course list.`}</div>
+      <input type="hidden" id="c-name" value="${esc(c.name)}">
+      <input type="hidden" id="c-tee" value="${esc(c.tee)}"></div>`
+    : `<div class="g2">
+      <div class="fr"><label>Course</label><input type="text" id="c-name" maxlength="60" placeholder="GC Brunn" value=""></div>
+      <div class="fr"><label>Tee</label><input type="text" id="c-tee" maxlength="20" placeholder="Rot" value=""></div>
+    </div>`}
     <div class="g2">
       <div class="fr"><label>Par</label><input type="number" id="c-par" min="54" max="80" placeholder="72" value="${c&&c.par!=null?c.par:''}"></div>
       <div class="fr"><label>Course rating</label><input type="number" step="0.1" id="c-cr" placeholder="76.9" value="${c&&c.cr!=null?c.cr:''}"></div>
@@ -2800,7 +2826,20 @@ async function saveCourse(id){
   if ((cr === '') !== (slope === '')){ toast('Course rating and slope go in together'); return; }
   const row = {name, tee, par: gv('c-par') === '' ? null : Number(gv('c-par')),
                cr: cr === '' ? null : Number(cr), slope: slope === '' ? null : Number(slope)};
-  const saved = id != null ? await upd('courses', 'id=eq.'+id, row) : await ins('courses', row);
+  /* A SAVE THAT FAILS MUST SAY SO. This had no catch, so the one write that can
+     legitimately be refused — the (name, tee) unique index — rejected into
+     nothing: no toast, sheet still open, and no way to tell it from a save that
+     worked. The duplicate is named separately because it is the only failure
+     here with an answer she can act on. */
+  let saved;
+  try {
+    saved = id != null ? await upd('courses', 'id=eq.'+id, row) : await ins('courses', row);
+  } catch(e){
+    const dup = /duplicate key|23505|already exists/i.test(String(e && e.message));
+    toast(dup ? `${name} · ${tee} is already in the list` : "Couldn't save that — try again");
+    console.warn('course save failed', e);
+    return;
+  }
   const newId = id != null ? id : (Array.isArray(saved) && saved[0] ? saved[0].id : null);
   await fetchCourses();
   closeSheet();

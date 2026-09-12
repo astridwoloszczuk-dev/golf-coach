@@ -245,6 +245,52 @@ ${externals.join('\n;\n')}
   check('...and the slope', sheet.indexOf('141') !== -1, true);
   check('...and saves back to that row', sheet.indexOf('saveCourse(1)') !== -1, true);
 
+  /* ── 6c · THE TEE IS THE ROW'S IDENTITY ──────────────────────────────────
+     Astrid, 12 Sep, a minute after first opening the sheet: "the slope and cr
+     do not change depending on tee ... does it?" They do — that is the whole
+     table — but the sheet let her answer that by typing a different tee into a
+     row that belonged to another one, and it failed BOTH ways:
+       · GC Brunn (both tees exist) → the unique index rejects it, and with no
+         catch on the save NOTHING happened, silently;
+       · the six courses seeded with a single Rot row → it SUCCEEDS, the row
+         quietly changes tee, and every round pointing at it then claims a tee
+         she never played, priced off a rating for a different one.
+     So on an existing row the name and tee are shown, not typed. */
+  check('editing an existing row does not offer a tee text box',
+        /<input[^>]+id="c-tee"[^>]*type="text"|type="text"[^>]*id="c-tee"/.test(sheet), false);
+  check('...it shows the identity instead', sheet.indexOf('Colony West · Rot') !== -1, true);
+  check('...and still submits it', sheet.indexOf('id="c-name"') !== -1 && sheet.indexOf('id="c-tee"') !== -1, true);
+  check('...and signposts the other tee of the same course', sheet.indexOf('Schwarz') !== -1, true);
+  // ADDING one still asks for both, because there is no row to contradict.
+  openCourseSheet(null, 'rf');
+  const addSheet = document.getElementById('sheet-in').innerHTML;
+  check('adding a course still asks for name and tee',
+        /id="c-tee"[^>]*placeholder="Rot"|placeholder="Rot"[^>]*id="c-tee"/.test(addSheet), true);
+
+  // A refused save must SAY so. The (name, tee) index is the one write that can
+  // legitimately be rejected, and it used to reject into silence.
+  let toasted = null, sawPatch = null;
+  const realApi = api;
+  try { api = async (path, o) => { o = o || {};
+          if (o.method === 'PATCH' || o.method === 'POST'){ sawPatch = path;
+            throw new Error('DB 409: duplicate key value violates unique constraint "courses_name_tee_key"'); }
+          return []; }; } catch(e){}
+  try { toast = m => { toasted = m; }; } catch(e){}
+  openCourseSheet(3, null);                       // GC Brunn · Rot
+  // The stub sets innerHTML but does not PARSE it, so the hidden identity
+  // fields the sheet writes as value="..." have to be filled by hand here —
+  // a browser does this itself. Everything above asserts on the markup.
+  document.getElementById('c-name').value = 'GC Brunn';
+  document.getElementById('c-tee').value = 'Rot';
+  document.getElementById('c-cr').value = '72.4';
+  document.getElementById('c-slope').value = '132';
+  let blewUp = false;
+  try { await saveCourse(3); } catch(e){ blewUp = true; }
+  check('a refused save does not blow up', blewUp, false);
+  check('...it tells her why', toasted, 'GC Brunn · Rot is already in the list');
+  try { api = realApi; } catch(e){}
+  try { toast = () => {}; } catch(e){}
+
   // ── 7 · THE GOALS BOARD survives rounds with no figure ─────────────────
   const mixed = [
     sep10, sep8, unknownTee,
