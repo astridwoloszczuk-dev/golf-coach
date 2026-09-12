@@ -222,6 +222,29 @@ ${externals.join('\n;\n')}
   check('a scan cannot guess between two tees', scanCourseGuess('Colony West').course_id, null);
   check('...but a single-tee course resolves', scanCourseGuess('GC Brunn').course_id, 3);
 
+  // ── 6b · BOTH FORMS carry the picker, and nothing else ─────────────────
+  editId = null; cardHoles = BASE_HOLES;
+  for (const n of ['simpleFormHtml', 'cardFormHtml']){
+    const f = eval(n)();
+    check(n + ' renders clean', ['undefined','[object Object]','NaN'].filter(t => f.indexOf(t) !== -1), []);
+    check(n + ' carries the picker', f.indexOf('_cs"') !== -1, true);
+    check(n + ' carries both escape hatches',
+          f.indexOf('somewhere else') !== -1 && f.indexOf('__add') !== -1, true);
+  }
+  // The Tee box is gone from quick add: the picker fills the tee from the row, and
+  // that field was empty in all 48 rounds because the answer belongs to the
+  // course, not the round. (Matched on the id, not the prefix — sr_tk/sr_tks are
+  // the takeaway fields and must survive.)
+  check('the old Tee box is gone from quick add', simpleFormHtml().indexOf('id="sr_t"'), -1);
+  check('...and the takeaway fields are untouched', simpleFormHtml().indexOf('id="sr_tks"') !== -1, true);
+
+  // The sheet opens on a real row, pre-filled, and saves back to THAT row.
+  openCourseSheet(1, 'rf');
+  const sheet = document.getElementById('sheet-in').innerHTML;
+  check('the course sheet pre-fills the rating', sheet.indexOf('76.9') !== -1, true);
+  check('...and the slope', sheet.indexOf('141') !== -1, true);
+  check('...and saves back to that row', sheet.indexOf('saveCourse(1)') !== -1, true);
+
   // ── 7 · THE GOALS BOARD survives rounds with no figure ─────────────────
   const mixed = [
     sep10, sep8, unknownTee,
