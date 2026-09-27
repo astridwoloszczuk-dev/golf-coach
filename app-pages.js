@@ -2622,8 +2622,8 @@ function historyHtml(){
           ${r.comp?'<span class="bi">Comp</span>':''}${r.practice?'<span class="bp">Practice</span>':''}
           ${ME.role==='student'&&r.comp?(COMP_SENT.has(r.id)
             ? `<button class="btn btns" onclick="sendRoundToWes(${r.id},true)" style="opacity:.6"
-                 title="Already sent once. Send again if you have edited the card or added the feelings.">→ ${esc(TEACHER_NAME)} ✓</button>`
-            : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→ ${esc(TEACHER_NAME)}</button>`):''}
+                 title="Already sent to ${esc(TEACHER_NAME)} once. Send again if you have edited the card or added the feelings.">→ ✓</button>`
+            : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→</button>`):''}
           ${r.stats_excluded?'<span class="bp" title="Kept in history, left out of every statistic">not counted</span>':''}
           ${ME.role==='student'?`<button class="btn btns" onclick="toggleExcluded(${r.id})" title="${r.stats_excluded?'Count this round in the statistics':'Keep this round but leave it out of the statistics'}">${r.stats_excluded?'∅':'⌀'}</button>
           <button class="btn btns" onclick="editRound(${r.id})">✎</button>
