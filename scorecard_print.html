@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Golf Scorecard</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+@page { size: A4 portrait; margin: 0; }
+body { font-family: Arial, Helvetica, sans-serif; background: white; color: #000; }
+
+/* A4 = 2×2 grid of A4-quarter CELLS (cut lines at 105mm / 148.5mm).
+   The CARD inside each cell is smaller + centred, leaving a safe gutter
+   at the page edges so nothing falls in the printer's dead zone. */
+.page {
+  width: 210mm; height: 297mm;
+  display: grid;
+  grid-template-columns: 105mm 105mm;
+  grid-template-rows: 148.5mm 148.5mm;
+  justify-items: center;
+  align-items: center;
+  page-break-after: always;
+}
+.page:last-child { page-break-after: auto; }
+
+.card { width: 93mm; height: 138mm; padding: 2.5mm 3mm; border: 0.4pt solid #ccc; display: flex; flex-direction: column; overflow: hidden; }
+
+/* FRONT HEADER */
+.front-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2mm; padding-bottom: 1.5mm; border-bottom: 1pt solid #000; flex-shrink: 0; }
+.front-title-text { font-size: 8pt; font-weight: bold; letter-spacing: 0.3pt; }
+.comp-wrap { display: flex; align-items: center; gap: 1.2mm; }
+.comp-box  { width: 4.5mm; height: 4.5mm; border: 0.6pt solid #000; border-radius: 0.5pt; flex-shrink: 0; }
+.comp-lbl  { font-size: 5.5pt; text-transform: uppercase; color: #555; }
+.header-field { display: flex; align-items: baseline; gap: 2mm; margin-bottom: 1.5mm; flex-shrink: 0; }
+.header-field:last-of-type { margin-bottom: 2.5mm; }
+.hf-lbl  { font-size: 5.5pt; text-transform: uppercase; letter-spacing: 0.3pt; color: #555; width: 12mm; flex-shrink: 0; }
+.hf-line { flex: 1; border-bottom: 0.5pt solid #000; height: 3.5mm; }
+/* Date and Tee share one line - both are short, and the row they free up goes to
+   the legend, which gained a line when the Mt column arrived and was being
+   clipped off the bottom of a fixed-height card. */
+.header-pair .hf-lbl2 { width: 7mm; margin-left: 3mm; }
+.header-pair .hf-line2 { flex: 0 0 20mm; }
+
+/* BACK MINI-HEADER */
+.back-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 1.5mm; margin-bottom: 2mm; border-bottom: 0.8pt solid #000; flex-shrink: 0; }
+.back-title { font-size: 7.5pt; font-weight: bold; }
+.back-sub   { font-size: 5.5pt; color: #666; }
+
+/* COLUMNS — # Mt Par Score Drive GIR App Short Putts Trbl Cmt (86.5mm of 87mm)
+   Mt = the match column, added 6 Aug. She ALREADY writes + - ½ on a separate
+   scorecard during a match, so this costs nothing and retires the second card.
+   Everything else gave up a fraction to fit it. */
+.col-hdr, .hole-row { display: grid; grid-template-columns: 5mm 5mm 6mm 9.5mm 8.5mm 7.5mm 8.5mm 8.5mm 6mm 9.5mm 12.5mm; }
+.col-hdr { margin-bottom: 0.5mm; flex-shrink: 0; }
+.ch { font-size: 5.2pt; text-align: center; font-weight: bold; text-transform: uppercase; letter-spacing: 0.2pt; padding: 0.8mm 0; }
+.ch.left  { text-align: left; font-size: 4.5pt; color: #777; }
+.ch.green { color: #15803d; }
+.ch.red   { color: #b91c1c; }
+.ch.cmt   { color: #7c3aed; }
+.ch.mt    { color: #0369a1; }
+
+.holes { display: flex; flex-direction: column; }
+.hole-row { height: 9.3mm; border-bottom: 0.25pt solid #d0d0d0; align-items: center; }
+.hole-row:nth-child(odd) { background: #f7f7f7; }
+.cell { display: flex; align-items: center; justify-content: center; height: 100%; border-right: 0.2pt solid #e0e0e0; padding: 0 0.3mm; }
+.cell:last-child { border-right: none; }
+.cell.left { justify-content: flex-start; }
+.hole-num { font-size: 7pt; font-weight: bold; color: #333; }
+
+.score-box { width: 9mm; height: 8mm; border: 0.7pt solid #000; border-radius: 1.5pt; background: #fff; }
+.pbox  { width: 5mm;  height: 7mm;   border: 0.5pt solid #999; border-radius: 1pt; background: #fff; }
+.sbox  { width: 6.8mm; height: 7.5mm; border: 0.6pt solid #555; border-radius: 1pt; background: #fff; }
+/* MP = matchplay, the standard abbreviation and — unlike the "Mt" it replaces —
+   not one letter away from Cmt (commitment). With the legend cut back to the
+   Trbl codes the column headers carry the whole explanation, so they have to be
+   unmistakable at a glance with a pencil in your hand.
+   + won the hole, - lost it, . halved. Left BLANK on a hole that
+   was conceded either way and never played out - the margin carries the match,
+   the card carries the golf, and neither has to guess a score for the other. */
+.mbox  { width: 4.2mm; height: 7.5mm; border: 0.6pt solid #0369a1; border-radius: 1pt; background: #f0f9ff; }
+.pubox { width: 5.5mm; height: 7.5mm; border: 0.6pt solid #b91c1c; border-radius: 1pt; background: #fff7f7; }
+/* One dot per shot you were not fully committed to. Wide on purpose: a hole can
+   take five of them, and a box you cannot fit the answer in gets left blank. */
+.cbox  { width: 11.5mm; height: 7.5mm; border: 0.6pt solid #7c3aed; border-radius: 1pt; background: #faf5ff; }
+.sbox.green { border-color: #16a34a; background: #f0fdf4; }
+.sbox.red   { border-color: #b91c1c; background: #fff7f7; }
+.tbox  { width: 8.5mm; height: 7.5mm; border: 0.6pt solid #b91c1c; border-radius: 1pt; background: #fff7f7; }
+
+/* NOTES (back) */
+/* Two boxes, not one. A single tick cannot tell "it was off" from "I did not
+   answer", and those are different facts. Deliberately the LAST thing before the
+   notes: qualitative colour goes in the notes, these three do not - they are the
+   ones you cannot deduce from the card, since she can score well with all three
+   off. That is the test a new field has to pass. */
+.ticks-block { border-top: 0.6pt solid #000; margin-top: 2mm; padding-top: 1.5mm; flex-shrink: 0; }
+/* One line each, Y/N to CIRCLE rather than boxes to tick — circling takes less
+   room than a box and frees the right-hand side for a word of colour, which is
+   the thing the tick alone could never carry. */
+.tick-line { display: flex; align-items: baseline; gap: 2mm; height: 5mm; }
+.tick-q    { font-size: 5.2pt; color: #444; width: 34mm; flex-shrink: 0; }
+.tick-yn   { font-size: 6pt; color: #000; letter-spacing: 0.2pt; flex-shrink: 0; }
+.tick-note { flex: 1; border-bottom: 0.4pt solid #bbb; height: 3.2mm; }
+.takeaway-block { border-top: 0.6pt solid #000; margin-top: 2mm; padding-top: 1.5mm; flex-shrink: 0; }
+.takeaway-opts { font-size: 6pt; letter-spacing: 0.1pt; margin-bottom: 2.5mm; }
+.notes-block { flex: 1; border-top: 0.6pt solid #000; margin-top: 2mm; padding-top: 1.5mm; display: flex; flex-direction: column; min-height: 0; }
+.notes-heading { font-size: 5.5pt; text-transform: uppercase; letter-spacing: 0.5pt; color: #888; margin-bottom: 1.5mm; flex-shrink: 0; }
+.notes-lines { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
+.notes-line-rule { border-bottom: 0.4pt solid #bbb; height: 0; }
+
+/* LEGEND (front) */
+.legend { border-top: 0.3pt solid #ddd; padding-top: 1.2mm; margin-top: 1.5mm; font-size: 4.4pt; color: #444; line-height: 1.5; flex-shrink: 0; }
+.legend > div { margin-bottom: 0.5mm; }
+.legend b { color: #000; }
+.lg.green { color: #15803d; }
+.lg.red   { color: #b91c1c; }
+
+@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+
+<script>
+const COURSE_PARS = [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null];
+function par(i) { return COURSE_PARS[i]; }
+
+function holeRow(i) {
+  const p = par(i);
+  return `
+    <div class="hole-row">
+      <div class="cell left"><span class="hole-num">${i+1}</span></div>
+      <div class="cell"><div class="mbox"></div></div>
+      <div class="cell"><div class="pbox">${p != null ? p : ''}</div></div>
+      <div class="cell"><div class="score-box"></div></div>
+      <div class="cell"><div class="sbox"></div></div>
+      <div class="cell"><div class="sbox green"></div></div>
+      <div class="cell"><div class="sbox"></div></div>
+      <div class="cell"><div class="sbox"></div></div>
+      <div class="cell"><div class="pubox"></div></div>
+      <div class="cell"><div class="tbox"></div></div>
+      <div class="cell"><div class="cbox"></div></div>
+    </div>`;
+}
+
+function colHeaders() {
+  return `
+    <div class="col-hdr">
+      <div class="ch left">#</div>
+      <div class="ch mt">MP</div>
+      <div class="ch">Par</div>
+      <div class="ch">Score</div>
+      <div class="ch">Drive</div>
+      <div class="ch green">GIR</div>
+      <div class="ch">App</div>
+      <div class="ch">Short</div>
+      <div class="ch red">Putts</div>
+      <div class="ch red">Trbl</div>
+      <div class="ch cmt">Cmt</div>
+    </div>`;
+}
+
+function legend() {
+  // Her call, 6 Aug: the ONLY thing she needs on the card is the Trbl codes.
+  // Everything else — blank-means-fine, Drive s/x, App m/x, Short c, Cmt dots,
+  // the Mt marks — is notation she and Wes have been using for months and can
+  // read without help. Same principle that kept the 30ft definition off the
+  // card: a reference two experts already know is decoration, and decoration
+  // was pushing the bottom of the page off the paper.
+  return `
+    <div class="legend">
+      <div><b>Trbl</b> <span class="lg red">W</span> water &middot; <span class="lg red">O</span> OB &middot; <span class="lg red">U</span> unplayable <b>= stroke</b> &nbsp;&middot;&nbsp; FB/GB bunker <b>= no stroke</b></div>
+    </div>`;
+}
+
+function frontCard() {
+  let holes = '';
+  for (let i = 0; i < 9; i++) holes += holeRow(i);
+  return `
+  <div class="card">
+    <div class="front-title">
+      <div class="front-title-text">⛳ Scorecard</div>
+      <div class="comp-wrap">
+        <div class="comp-box"></div><span class="comp-lbl">Comp</span>
+        <div class="comp-box"></div><span class="comp-lbl">Pract</span>
+      </div>
+    </div>
+    <div class="header-field"><span class="hf-lbl">Course</span><div class="hf-line"></div></div>
+    <div class="header-field header-pair">
+      <span class="hf-lbl">Date</span><div class="hf-line"></div>
+      <span class="hf-lbl hf-lbl2">Tee</span><div class="hf-line hf-line2"></div></div>
+    ${colHeaders()}
+    <div class="holes">${holes}</div>
+    <div class="notes-block">
+      <div class="notes-heading">Notes</div>
+      <!-- six lines: the front has ~20mm spare once the legend moved off it, and
+           notes you cannot fit are notes you do not write -->
+      <div class="notes-lines">${Array(6).fill('<div class="notes-line-rule"></div>').join('')}</div>
+    </div>
+  </div>`;
+}
+
+function backCard() {
+  let holes = '';
+  for (let i = 9; i < 18; i++) holes += holeRow(i);
+  return `
+  <div class="card">
+    <div class="back-header">
+      <div class="back-title">Back 9</div>
+      <div class="back-sub">↑ continued</div>
+    </div>
+    ${colHeaders()}
+    <div class="holes">${holes}</div>
+    <div class="ticks-block">
+      <div class="notes-heading">Three for Wes — circle one, add a word if it helps</div>
+      <div class="tick-line"><span class="tick-q">Shot shape under control?</span>
+        <span class="tick-yn">Y &nbsp;/&nbsp; N</span><span class="tick-note"></span></div>
+      <div class="tick-line"><span class="tick-q">Pattern in the misses spotted?</span>
+        <span class="tick-yn">Y &nbsp;/&nbsp; N</span><span class="tick-note"></span></div>
+      <div class="tick-line"><span class="tick-q">Right clubs selected?</span>
+        <span class="tick-yn">Y &nbsp;/&nbsp; N</span><span class="tick-note"></span></div>
+    </div>
+    <div class="takeaway-block">
+      <div class="notes-heading">The one thing that worked — circle one, always</div>
+      <div class="takeaway-opts">Driving &middot; Approach &middot; Short game &middot; Putting &middot; Course mgmt &middot; Head</div>
+      <div class="notes-line-rule"></div>
+    </div>
+    ${legend()}
+  </div>`;
+}
+
+document.write(`
+  <div class="page">${frontCard()}${frontCard()}${frontCard()}${frontCard()}</div>
+  <div class="page">${backCard()}${backCard()}${backCard()}${backCard()}</div>
+`);
+</script>
+</body>
+</html>

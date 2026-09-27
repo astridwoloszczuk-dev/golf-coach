@@ -2127,12 +2127,15 @@ async function sendRoundToWes(id, again){
    shorthand, she never needs it, and neither should pay for it with a screen
    of small print above their rounds. */
 let legendOpen = false, printOpen = false;
-const SCORECARD_URL = 'https://astridwoloszczuk-dev.github.io/goal-tracker/scorecard_print.html';
+/* Moved into this repo 27 Sep 2026 so goal-tracker could go private: its git
+   history holds 117 days of sleep/HRV/resting-HR snapshots. Edit THIS copy;
+   the one in goal-tracker is frozen. */
+const SCORECARD_URL = 'scorecard_print.html';
 function toggleLegend(){ legendOpen = !legendOpen; renderRounds(); }
 function togglePrint(){ printOpen = !printOpen; renderRounds(); }
 function roundsLegendHtml(){
   /* Two tiles, not one. Reading the card and printing the card are different
-     errands — and the printable sheet lives in the OTHER repo, so without a
+     errands — and the printable sheet lived in the OTHER repo, so without a
      link here the only way to it was hunting for a file on the laptop, which
      is no use standing in a pro shop with a phone.
 
