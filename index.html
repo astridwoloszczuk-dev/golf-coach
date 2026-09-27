@@ -566,14 +566,24 @@ async function authFetch(path, body){
 
 async function refreshSession(){
   if (!SESSION || !SESSION.refresh_token) return false;
+  const spent = SESSION.refresh_token;
   try {
-    const j = await authFetch('token?grant_type=refresh_token', {refresh_token: SESSION.refresh_token});
+    const j = await authFetch('token?grant_type=refresh_token', {refresh_token: spent});
     saveSession(j);
     return true;
-  } catch { saveSession(null); return false; }
+  } catch {
+    // The habit app shares this session (27 Sep 2026) and may have rotated
+    // the token since. Only sign out if storage still holds the one that failed.
+    loadSession();
+    if (SESSION && SESSION.refresh_token && SESSION.refresh_token !== spent) return true;
+    saveSession(null); return false;
+  }
 }
 
 async function validToken(){
+  // Re-read storage first: the habit app refreshes this same session, and
+  // refreshing with a copy it has already spent is what would sign us out.
+  loadSession();
   if (!SESSION) return null;
   if (SESSION.expires_at - 60 <= Math.floor(Date.now()/1000)) {
     if (!await refreshSession()) return null;
