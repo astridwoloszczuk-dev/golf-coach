@@ -171,24 +171,9 @@ function playedToBand(v){
 // goal off two data points teaches her to distrust the colour.
 const GOAL_METRICS = {
 
-  /* Open MID-WEEK events entered individually, away from a home course.
-
-     Rewritten 6 Aug, and the first version was measuring the wrong thing
-     entirely. It counted ROUNDS, so a three-day Mannschaftsmeisterschaft
-     counted as three, and the goal read 7-of-5 and green. Astrid knew that was
-     flattering; the corrected number is 0.
-
-     Two corrections, both derived, neither needing a new field:
-       1. CONSECUTIVE DAYS AT ONE COURSE ARE ONE EVENT. Entering a three-day
-          team event is one decision, not three.
-       2. MID-WEEK ONLY. Every away competitive round she has played this
-          season was a Saturday or a Sunday - the team events. Weekends are
-          Niko's, which is the real constraint behind this goal, so Mon-Fri is
-          what actually distinguishes the thing being aimed at. It also
-          excludes the team events without needing to label them.
-
-     Aim 1.5 a month across May-October, judged on PACE so far rather than the
-     season total, or it reads red until October and then flips in a week. */
+  /* "More Open Events": away stroke-play competition rounds, paced across
+     May–October. (Its 6 Aug mid-week / one-event-per-block version is gone;
+     the comment below is the rule in force.) */
   away_comps(R){
     /* Away, STROKE FORMAT, any day, counted as ROUNDS.
 
@@ -246,16 +231,24 @@ const GOAL_METRICS = {
      THRESHOLDS ARE DELIBERATELY NOT 95%: she makes about one birdie a round,
      so a season is ~20 events and a single slip costs 5 points. 95% would mean
      one lapse all year and would sit red on noise. 90/70 keeps it honest and
-     still demanding — she is on 75% in competition against 100% socially. */
+     still demanding. (In August it read 75% comp vs 100% social; by 29 Sep
+     the gap had closed, 81% vs 83%.)
+
+     PAIRS BY HOLE POSITION, fixed 29 Sep 2026. It used to drop blank holes
+     first and then pair neighbours in what was left — so on a matchplay card a
+     conceded hole (blank score, by design) was skipped and a birdie got
+     judged against the hole AFTER it. A blank next hole now means no pair. */
   post_birdie(R){
     let tot = 0, ok = 0;
+    const scored = h => h && String(h.par??'')!=='' && String(h.score??'')!=='';
     for (const r of R){
       if (r.stats_excluded) continue;
-      const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
-      for (let i = 0; i < p.length-1; i++){
-        if (Number(p[i].score) < Number(p[i].par)){
+      const hd = r.holes_data || [];
+      for (let i = 0; i < hd.length-1; i++){
+        if (!scored(hd[i]) || !scored(hd[i+1])) continue;
+        if (Number(hd[i].score) < Number(hd[i].par)){
           tot++;
-          if (Number(p[i+1].score) - Number(p[i+1].par) <= 1) ok++;
+          if (Number(hd[i+1].score) - Number(hd[i+1].par) <= 1) ok++;
         }
       }
     }
@@ -277,11 +270,18 @@ const GOAL_METRICS = {
      of the fault codes intact, which the judgement columns do not.
 
      Competition only, by design: her comp/social split IS the goal, and
-     averaging the two would dissolve exactly the gap she is trying to close. */
+     averaging the two would dissolve exactly the gap she is trying to close.
+
+     ROLLING LAST 8 COMP ROUNDS, her call 29 Sep 2026 (was: the whole season).
+     By September a season-long figure barely moved: it read 19% while her last
+     8 comps ran 24%, so an improvement was invisible. 8 matches counting_avg.
+     The cost, which she accepted: ~80 missed greens, so ±5 points is luck. */
   scramble(R){
     let missed = 0, ud = 0;
-    for (const r of R){
-      if (r.stats_excluded || !r.comp) continue;
+    const last8 = R.filter(r => !r.stats_excluded && r.comp
+                      && (r.holes_data||[]).some(h => String(h.score??'')!==''))
+                   .sort((a,z) => a.date.localeCompare(z.date)).slice(-8);
+    for (const r of last8){
       for (const h of (r.holes_data||[])){
         if (String(h.par??'')==='' || String(h.score??'')==='') continue;
         if (h.gir) continue;
@@ -292,7 +292,7 @@ const GOAL_METRICS = {
     }
     if (missed < 20) return {txt:'not enough competition holes', state:null};
     const pct = Math.round(ud*100/missed);
-    return {val: pct, txt: `${pct}% scrambled · ${ud}/${missed}`,
+    return {val: pct, txt: `${pct}% scrambled · ${ud}/${missed} · last ${last8.length} comps`,
             state: pct >= 30 ? 'good' : pct >= 20 ? 'warn' : 'bad'};
   },
 
@@ -2019,7 +2019,7 @@ function roundDetailHtml(r){
         <th style="${cell};text-align:left">Hole</th><th style="${cell}">Par</th><th style="${cell}">Score</th>
         <th style="${cell}">GIR</th><th style="${cell}">Drive</th><th style="${cell}">App</th>
         <th style="${cell}">Short</th><th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th>${
-          isMatch?`<th style="${cell}">Match</th>`:''}<th style="${cell}">Cmt</th>
+          isMatch?`<th style="${cell}">Match</th>`:''}
       </tr></thead><tbody>
       ${hd.map(h=>{
         const p=Number(h.par), s=Number(h.score);
@@ -2040,7 +2040,6 @@ function roundDetailHtml(r){
           ${isMatch?`<td style="${cell};font-weight:700;color:${
             h._st==null?'var(--b1)':h._st>0?'var(--gn)':h._st<0?'var(--rd)':'var(--mu)'}">${
             h._st==null?'\u00b7':esc(matchStateLabel(h._st))}</td>`:''}
-          <td style="${cell};color:${h.cmt?'var(--rd)':'var(--b1)'}">${h.cmt?'●'.repeat(Math.min(5,Number(h.cmt))):'·'}</td>
         </tr>`;
       }).join('')}
       </tbody></table></div>
@@ -2049,8 +2048,7 @@ function roundDetailHtml(r){
       <b>Drive</b> S advantage lost · X green gone &nbsp;·&nbsp; <b>App</b> M missed the quadrant, 7i or shorter · X dead, any club
       <span style="opacity:.7">(W on older cards = wedge wrong side, retired 5 Aug 2026; counted as M)</span><br>
       <b>Short</b> C choked a makeable save (successful saves are derived, not ticked) &nbsp;·&nbsp;
-      <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker &nbsp;·&nbsp;
-      <b>Cmt</b> one dot per shot she was not fully committed to
+      <b>Trbl</b> W water · O OB · U unplayable · FB/GB bunker
     </div>`;
 }
 
@@ -2156,7 +2154,6 @@ function roundsLegendHtml(){
       <b>Short</b> C choked a makeable save \u2014 successful saves are derived, not ticked<br>
       <b>Trbl</b> W water \u00b7 O OB \u00b7 U unplayable <i>(these carry a penalty stroke)</i> \u00b7 FB/GB bunker, no stroke<br>
       <b>MP</b> matchplay only: + won the hole \u00b7 \u2212 lost it \u00b7 . halved \u2014 a conceded hole gets a mark and <b>no score</b>, never a guess<br>
-      <b>Cmt</b> one dot per shot you were not fully committed to, marked after the shot<br>
       <b>GIR</b> green in regulation \u00b7 <b>Putts</b> count
     </div>`)
   + row('Printable card', printOpen, 'togglePrint()',
@@ -2231,7 +2228,7 @@ const inPosition = h => {
 function deriveRoundStats(hd){
   const Z={n:0,delta:null,gir:null,fw:null,ud:null,p3:null,db:null,b5:null,pen:null,bs:null,
            drvS:null,drvX:null,appM:null,appW:null,appX:null,shC:null,putts:null,penStk:null,bunk:null,hero:null,
-           quadHit:null,quadPct:null,posHit:null,posPct:null,cmtPct:null,cmtDots:null};
+           quadHit:null,quadPct:null,posHit:null,posPct:null};
   if(!hd||!hd.length)return Z;
   const played=hd.filter(h=>h.par!=null&&h.par!==''&&h.score!=null&&h.score!=='');
   const n=played.length;
@@ -2345,29 +2342,11 @@ function deriveRoundStats(hd){
     o.quadHit = n - o.appM - o.appX;
     o.quadPct = n ? Math.round(o.quadHit * 100 / n) : null;
 
-    /* COMMITMENT % — dots marked AFTER each shot, per Wes and her call that it
-       must be a record rather than a live judgement (a running self-assessment
-       mid-swing is the attention spiral that produced the range shanks).
-       Denominator is shots actually PLAYED: score minus the penalty strokes,
-       which are the W/O/U marks. A penalty is not a shot you failed to commit
-       to. Bunkers carry none. Known limit: one Trbl code per hole, so two
-       penalties on one hole quietly inflate that hole's denominator. */
-    /* ⚠ THE DENOMINATOR IS THE WHOLE ROUND, not the dotted holes.
-       First version summed shots only over holes carrying a dot, so 2 dots on
-       one hole of 8 shots read 75% instead of 95% — every hole left blank,
-       which MEANS fully committed, was thrown out of the denominator. Exactly
-       backwards: a blank is data, not an absence.
-       The presence of any dot is only the trigger for showing the figure at
-       all; without that a round she never marked would read a meaningless
-       100%. */
-    const usedCmt = played.some(h => h.cmt != null && h.cmt !== '');
-    if (usedCmt){
-      const dots  = played.reduce((a,h)=>a+Number(h.cmt||0), 0);
-      const shots = played.reduce((a,h)=>a + Number(h.score)
-        - (['W','O','U'].includes(tr(h)) ? 1 : 0), 0);
-      o.cmtDots = dots;
-      o.cmtPct = shots > 0 ? Math.round((1 - dots/shots) * 100) : null;
-    }
+    /* COMMITMENT % (Cmt dots) RETIRED 29 Sep 2026, her call: filled on 3 of 16
+       rounds after 5 Aug, so a percentage from it was noise beside real
+       numbers, and the column cost width on the paper card every round. Old
+       dots stay in holes_data untouched (saveRound carries them through an
+       edit); nothing reads them. */
   }else{
     o.fw=played.filter(h=>h.fw&&Number(h.par)!==3).length;
     o.ud=played.filter(h=>h.ud&&!h.gir).length;
@@ -2894,9 +2873,7 @@ function holeBoxHtml(i){
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Short c</span><input type="text" id="hshort_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="blank = fine (saves are derived) · c choked a makeable save"></div>
       <div class="hole-nf"><span class="hole-lbl">Putts</span><input type="number" id="hputts_${i}" min="0" max="9" placeholder="—" class="hole-num"></div>
       <div class="hole-nf" style="flex:1"><span class="hole-lbl">Trbl</span><input type="text" id="htrbl_${i}" maxlength="2" placeholder="—" class="hole-num" style="text-transform:uppercase;text-align:center" title="W water · O OB · U unplayable · FB/GB bunker"></div>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">MP</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · . halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>
-      <div class="hole-nf" style="flex:1"><span class="hole-lbl">Not cmtd</span><input type="number" min="0" max="9" id="hcmt_${i}" placeholder="—" class="hole-num" style="text-align:center" title="How many shots on this hole you were NOT fully committed to — the dots off the paper card. Blank = all committed."></div>
-    </div></div>`;
+      <div class="hole-nf" style="flex:1"><span class="hole-lbl">MP</span><input type="text" id="hmp_${i}" maxlength="1" placeholder="—" class="hole-num" style="text-align:center" title="Matchplay only: + won the hole · - lost it · . halved. Leave the SCORE blank on a conceded hole rather than guessing."></div>    </div></div>`;
 }
 
 function cardFormHtml(){
@@ -2953,7 +2930,7 @@ function removeCardHole(){
   // Only warn if there is something to lose — an accidental tap on ＋ should
   // cost one tap to undo, not a confirm dialog.
   const i = cardHoles-1;
-  const filled = ['hp_','hs_','hdrive_','happ_','hshort_','hputts_','htrbl_','hmp_','hcmt_']
+  const filled = ['hp_','hs_','hdrive_','happ_','hshort_','hputts_','htrbl_','hmp_']
     .some(p => el(p+i) && String(el(p+i).value||'').trim() !== '');
   if (filled && !confirm(`Hole ${cardHoles} has something in it. Remove it anyway?`)) return;
   box.lastElementChild.remove();
@@ -3017,6 +2994,10 @@ function fillFormFromRound(){
       if(el('hshort_'+i))el('hshort_'+i).value= hd.short||'';
       if(el('hputts_'+i))el('hputts_'+i).value= hd.putts!=null?hd.putts:'';
       if(el('htrbl_'+i)) el('htrbl_'+i).value = hd.trbl||'';
+      // MP was never restored here (found 29 Sep 2026), so saving an edited
+      // matchplay round wrote every mark back blank — and the match result is
+      // derived from those marks. Stored '=' shows as the dot she writes.
+      if(el('hmp_'+i))   el('hmp_'+i).value   = hd.mp==='=' ? '.' : (hd.mp||'');
     });
   }
 }
@@ -3185,7 +3166,9 @@ async function saveCardRound(){
     short: el('hshort_'+i)?el('hshort_'+i).value.trim().toLowerCase():'',
     putts: el('hputts_'+i)&&el('hputts_'+i).value!=='' ? Number(el('hputts_'+i).value) : null,
     trbl:  el('htrbl_'+i)?el('htrbl_'+i).value.trim().toUpperCase():'',
-    cmt:   el('hcmt_'+i)&&el('hcmt_'+i).value!=='' ? Number(el('hcmt_'+i).value) : null,
+    // Cmt retired 29 Sep 2026: no box any more, so carry an old round's dots
+    // through an edit rather than blanking data she once entered.
+    cmt:   (editId && (((ROUNDS.find(x=>x.id===editId)||{}).holes_data||[])[i]||{}).cmt) ?? null,
     // she writes a DOT for a halved hole - less to write than ½ and impossible
     // to confuse with anything else on a card. Accept the variants, store one.
     mp:    el('hmp_'+i)? el('hmp_'+i).value.trim().replace(/^[.½0]$/,'=') : '',
@@ -4071,7 +4054,7 @@ function cumScorecardHtml(rounds){
         <th style="${cell};text-align:left">Round</th><th style="${cell}">Hole</th>
         <th style="${cell}">Par</th><th style="${cell}">Score</th><th style="${cell}">GIR</th>
         <th style="${cell}">Drive</th><th style="${cell}">App</th><th style="${cell}">Short</th>
-        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th><th style="${cell}">Cmt</th></tr>
+        <th style="${cell}">Putts</th><th style="${cell}">Trbl</th><th style="${cell}">MP</th></tr>
       </thead><tbody>
       ${holes.map((h, i) => {
         const d = h._scored ? Number(h.score) - Number(h.par) : null;
@@ -4091,16 +4074,12 @@ function cumScorecardHtml(rounds){
           <td style="${cell}">${mark(h.short)}</td>
           <td style="${cell};color:var(--mu)">${h.putts == null ? '<span style="color:var(--b1)">\u00b7</span>' : h.putts}</td>
           <td style="${cell}">${mark(h.trbl)}</td>
-          <!-- MP was in the header row and NOT in the body: twelve columns of
-               heading over eleven cells, so Cmt slid left under MP and nothing
-               rendered under Cmt at all. Found by Astrid 11 Aug reading Wes's
-               summary. The single-round card at roundDetailHtml() has always had
-               both \u2014 this table is a second, older copy of the same layout and
-               only one of them was kept current when MP arrived. -->
+          <!-- Header and body must carry the same columns: on 11 Aug the header
+               had one more than the body and everything slid left under the
+               wrong heading. This table is a second copy of roundDetailHtml()'s
+               layout, so change both together (tablecheck.js guards it). -->
           <td style="${cell};font-weight:700;color:${h.mp === '+' ? 'var(--gn)' : h.mp === '-' ? 'var(--rd)' : 'var(--mu)'}">${
             h.mp === '=' ? '\u00bd' : (h.mp ? esc(h.mp) : '<span style="color:var(--b1)">\u00b7</span>')}</td>
-          <td style="${cell};color:${h.cmt ? 'var(--rd)' : 'var(--b1)'}">${
-            h.cmt ? '\u25cf'.repeat(Math.min(5, Number(h.cmt))) : '\u00b7'}</td>
         </tr>`;
       }).join('')}
       </tbody></table></div>`;
@@ -4431,7 +4410,6 @@ async function renderSummary(){
         ${s.posPct!=null?`<span style="font-weight:700;color:var(--tx)">Pos:${s.posPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
-        ${s.cmtPct!=null?`<span style="font-weight:700;color:var(--tx)">Cmt:${s.cmtPct}%</span>`:''}
         ${r.stats_excluded?'<span class="bp">not counted</span>':''}</div>
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}

@@ -45,17 +45,17 @@ body { font-family: Arial, Helvetica, sans-serif; background: white; color: #000
 .back-title { font-size: 7.5pt; font-weight: bold; }
 .back-sub   { font-size: 5.5pt; color: #666; }
 
-/* COLUMNS — # Mt Par Score Drive GIR App Short Putts Trbl Cmt (86.5mm of 87mm)
-   Mt = the match column, added 6 Aug. She ALREADY writes + - ½ on a separate
+/* COLUMNS — # MP Par Score Drive GIR App Short Putts Trbl (86.5mm of 87mm)
+   MP = the match column, added 6 Aug. She ALREADY writes + - ½ on a separate
    scorecard during a match, so this costs nothing and retires the second card.
-   Everything else gave up a fraction to fit it. */
-.col-hdr, .hole-row { display: grid; grid-template-columns: 5mm 5mm 6mm 9.5mm 8.5mm 7.5mm 8.5mm 8.5mm 6mm 9.5mm 12.5mm; }
+   Cmt (commitment dots) RETIRED 29 Sep 2026: filled on 3 of 16 rounds. Its
+   12.5mm went back to the columns written in most, so the boxes breathe. */
+.col-hdr, .hole-row { display: grid; grid-template-columns: 5mm 6mm 6mm 11mm 10.5mm 8.5mm 10.5mm 10.5mm 7.5mm 11mm; }
 .col-hdr { margin-bottom: 0.5mm; flex-shrink: 0; }
 .ch { font-size: 5.2pt; text-align: center; font-weight: bold; text-transform: uppercase; letter-spacing: 0.2pt; padding: 0.8mm 0; }
 .ch.left  { text-align: left; font-size: 4.5pt; color: #777; }
 .ch.green { color: #15803d; }
 .ch.red   { color: #b91c1c; }
-.ch.cmt   { color: #7c3aed; }
 .ch.mt    { color: #0369a1; }
 
 .holes { display: flex; flex-direction: column; }
@@ -69,8 +69,8 @@ body { font-family: Arial, Helvetica, sans-serif; background: white; color: #000
 .score-box { width: 9mm; height: 8mm; border: 0.7pt solid #000; border-radius: 1.5pt; background: #fff; }
 .pbox  { width: 5mm;  height: 7mm;   border: 0.5pt solid #999; border-radius: 1pt; background: #fff; }
 .sbox  { width: 6.8mm; height: 7.5mm; border: 0.6pt solid #555; border-radius: 1pt; background: #fff; }
-/* MP = matchplay, the standard abbreviation and — unlike the "Mt" it replaces —
-   not one letter away from Cmt (commitment). With the legend cut back to the
+/* MP = matchplay, the standard abbreviation (it replaced "Mt", which sat one
+   letter away from the since-retired Cmt). With the legend cut back to the
    Trbl codes the column headers carry the whole explanation, so they have to be
    unmistakable at a glance with a pencil in your hand.
    + won the hole, - lost it, . halved. Left BLANK on a hole that
@@ -80,7 +80,6 @@ body { font-family: Arial, Helvetica, sans-serif; background: white; color: #000
 .pubox { width: 5.5mm; height: 7.5mm; border: 0.6pt solid #b91c1c; border-radius: 1pt; background: #fff7f7; }
 /* One dot per shot you were not fully committed to. Wide on purpose: a hole can
    take five of them, and a box you cannot fit the answer in gets left blank. */
-.cbox  { width: 11.5mm; height: 7.5mm; border: 0.6pt solid #7c3aed; border-radius: 1pt; background: #faf5ff; }
 .sbox.green { border-color: #16a34a; background: #f0fdf4; }
 .sbox.red   { border-color: #b91c1c; background: #fff7f7; }
 .tbox  { width: 8.5mm; height: 7.5mm; border: 0.6pt solid #b91c1c; border-radius: 1pt; background: #fff7f7; }
@@ -136,7 +135,6 @@ function holeRow(i) {
       <div class="cell"><div class="sbox"></div></div>
       <div class="cell"><div class="pubox"></div></div>
       <div class="cell"><div class="tbox"></div></div>
-      <div class="cell"><div class="cbox"></div></div>
     </div>`;
 }
 
@@ -153,13 +151,12 @@ function colHeaders() {
       <div class="ch">Short</div>
       <div class="ch red">Putts</div>
       <div class="ch red">Trbl</div>
-      <div class="ch cmt">Cmt</div>
     </div>`;
 }
 
 function legend() {
   // Her call, 6 Aug: the ONLY thing she needs on the card is the Trbl codes.
-  // Everything else — blank-means-fine, Drive s/x, App m/x, Short c, Cmt dots,
+  // Everything else — blank-means-fine, Drive s/x, App m/x, Short c,
   // the Mt marks — is notation she and Wes have been using for months and can
   // read without help. Same principle that kept the 30ft definition off the
   // card: a reference two experts already know is decoration, and decoration

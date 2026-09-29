@@ -144,6 +144,51 @@ ${externals.join('\n;\n')}
   check('editRound restores 20', cardHoles, 20);
   check('reopened form renders 20 headers', (cardFormHtml().match(/Hole \\d+<\\/div>/g) || []).length, 20);
 
+  // ── 7 · an EDIT keeps the MP marks and the retired Cmt dots ────────────
+  // 29 Sep 2026: editRound() never refilled the MP boxes, so re-saving a
+  // matchplay round wrote every mark back blank (and the match result is
+  // derived from them). Cmt lost its box the same day; old dots must survive.
+  ROUNDS = [{ id: 8, date:'2026-09-21', course:'Colony West', comp:true, matchplay:true, is_simple:false,
+              takeaway:'drive', takeaway_note:'pressure off the tee', takeaway_shot:'drive on 12',
+              holes_data: Array.from({length:18}, (_, i) => ({par:'4', score:'4',
+                mp: i === 0 ? '+' : i === 1 ? '=' : i === 2 ? '-' : '', cmt: i === 5 ? 2 : null})) }];
+  editRound(8);
+  fillFormFromRound();   // renderRounds() does this in the app; it is stubbed here
+  check('edit refills a won hole', document.getElementById('hmp_0').value, '+');
+  check('edit shows a halve as the dot', document.getElementById('hmp_1').value, '.');
+  check('edit refills a lost hole', document.getElementById('hmp_2').value, '-');
+  document.getElementById('rf_d').value = '2026-09-21';
+  document.getElementById('rf_tk').value = 'drive';
+  document.getElementById('rf_tkn').value = 'pressure off the tee';
+  document.getElementById('rf_tks').value = 'drive on 12';
+  captured = null;
+  await saveCardRound();
+  if (!captured) { console.log('  FAIL  edited round produced no row'); fails++; }
+  else {
+    check('re-save keeps won', captured.holes_data[0].mp, '+');
+    check('re-save keeps halved', captured.holes_data[1].mp, '=');
+    check('re-save keeps lost', captured.holes_data[2].mp, '-');
+    check('re-save carries old Cmt dots', captured.holes_data[5].cmt, 2);
+    check('no Cmt invented elsewhere', captured.holes_data[6].cmt, null);
+  }
+  check('the form has no Cmt box any more', /hcmt_/.test(cardFormHtml()), false);
+
+  // ── 8 · scramble = last 8 comp rounds; bounce-back pairs by position ───
+  const H = (sc, gir) => ({par:'4', score:String(sc), gir: !!gir});
+  const compRound = (d, saves) => ({date:d, comp:true, holes_data:
+    Array.from({length:10}, (_, i) => H(i < saves ? 4 : 5, false))});
+  const Rs = [];
+  for (let k = 0; k < 4; k++) Rs.push(compRound('2026-05-0' + (k+1), 0));   // old: 0 saves
+  for (let k = 0; k < 8; k++) Rs.push(compRound('2026-09-0' + (k+1), 3));   // recent: 3 of 10
+  const sc = GOAL_METRICS.scramble(Rs);
+  check('scramble reads only the last 8 comps', sc.val, 30);
+  check('scramble says so', /last 8 comps/.test(sc.txt), true);
+
+  const mpCard = {comp:true, holes_data: [H(3), {par:'4', score:''}, H(7)].concat(Array.from({length:15}, () => H(4)))};
+  const pb = GOAL_METRICS.post_birdie([mpCard, mpCard, mpCard, mpCard, mpCard,
+    {comp:true, holes_data:[H(3), H(4)]}]);
+  check('conceded hole after a birdie is not paired with the one after it', pb.txt.startsWith('1/1'), true);
+
   console.log('');
   console.log(fails ? fails + ' FAILURE(S)' : 'all checks passed');
   process.exit(fails ? 1 : 0);
