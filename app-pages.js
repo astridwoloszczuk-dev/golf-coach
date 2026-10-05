@@ -1028,6 +1028,7 @@ async function renderWeek(){
        nothing to keep in step. */
     selSoft('tournaments', `select=id,date,name,type,score,venue`
       + `&date=gte.${wk}&date=lte.${ymd(addDays(WEEK,6))}&order=date.asc,id.asc`),
+    loadFinishers(),      // fills FINISHERS for the drill sheet; soft, so [] before migration 32
   ]);
   ASSIGN = ASSIGN || []; SUBS = SUBS || []; REFL = REFL || []; wkRounds = wkRounds || [];
   WKPLANNED = WKPLANNED || []; WKTOURN = WKTOURN || [];
@@ -1256,8 +1257,15 @@ function aName(a, dash){
 
 function pillHtml(a){
   const d = a.drills || {};
+  // ◎ = carries a finisher; green once made, red once missed. ↻ = this row
+  // exists because the last finisher was missed.
+  const fm = (a.finisher_mode || 'none') === 'none' ? '' :
+    `<span class="sc ${a.finisher_result==='made'?'good':a.finisher_result==='missed'?'bad':''}"
+           title="Finisher${a.finisher_name ? ': '+esc(a.finisher_name) : ' — wheel, not spun yet'}">◎</span>`;
   return `<span class="pill by-${a.assigned_by} ${a.done?'done':''}" data-aid="${a.id}">
+    ${a.repeat_of ? '<span class="sc" title="Repeat — the finisher was missed">↻</span>' : ''}
     <span class="nm">${esc(aName(a))}</span>
+    ${fm}
     ${a.done ? '<span class="sc">✓' + (nn(a.score) ? ' '+a.score : '') + '</span>' : ''}
   </span>`;
 }
@@ -1327,7 +1335,10 @@ function pillPointerDown(e){
 function pillTapped(aid){
   const a = ASSIGN.find(x => x.id === aid);
   if (!a) return;
-  if (a.day_index == null){
+  // Wes opens the sheet from the tray too: it is the only place he can put a
+  // finisher on a row Claude or she added. Placing on a day is hers (and he
+  // can still drag).
+  if (a.day_index == null && ME.role !== 'teacher'){
     // In the tray: select it, then tap a day.
     selectedAid = (selectedAid === aid) ? null : aid;
     document.querySelectorAll('.pill[data-aid]').forEach(p =>
@@ -1360,9 +1371,11 @@ function openAssignmentSheet(a){
   // category — offering "Score out of ?" on an hour with Wes is a field that
   // can only be filled in wrongly. Tick, note, delete: that is the whole object.
   const scored = !!a.drill_id;
+  FIN_RESULT = a.finisher_result || null;
   openSheet(`
     <div class="sheet-h"><b>${esc(aName(a))}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
     <div class="empty" style="padding:0 0 12px">${a.drill_id ? esc(catLabel(d.category)) + ' · ' : ''}assigned by ${esc(a.assigned_by)}${d.description ? '<br>'+esc(d.description) : ''}</div>
+    ${a.repeat_of ? `<div class="hintbar" style="margin:0 0 12px">Repeat — the finisher was missed last time.</div>` : ''}
     <label style="display:flex;align-items:center;gap:10px;font-size:15px;margin-bottom:12px;cursor:pointer">
       <input type="checkbox" id="a-done" ${a.done?'checked':''} style="width:20px;height:20px;accent-color:var(--gn)"> Done
     </label>
@@ -1386,6 +1399,8 @@ function openAssignmentSheet(a){
                title="Holes or reps this score was measured over (optional)"
                style="flex:0 0 66px">
       </div></div>`}
+    ${(a.finisher_mode || 'none') === 'none' ? '' : `<div id="fin-box" style="margin-bottom:12px">${finisherInnerHtml(a)}</div>`}
+    ${ME.role !== 'teacher' ? '' : `<div class="fr"><label>Finisher</label>${finisherSelectHtml('a-fin', a)}</div>`}
     <div class="fr"><label>Note</label><textarea id="a-note" rows="2" placeholder="How did it actually go?">${esc(a.note||'')}</textarea></div>
     <div class="rbtns">
       <button class="btn btnp" onclick="saveAssignment(${a.id})">Save</button>
@@ -1410,14 +1425,188 @@ async function saveAssignment(id){
   const done = el('a-done').checked;
   const sc = gv('a-score');
   const oo = gv('a-outof');
-  await upd('assignments','id=eq.'+id, {
+  const patch = {
     done,
     score: sc === '' ? null : Number(sc),
     out_of: oo === '' ? null : Number(oo),
     note: gv('a-note') || null,
     done_at: done ? new Date().toISOString() : null,
-  });
+  };
+  // Finisher fields go in the patch ONLY when they apply, so a database that
+  // has not had migration 32 never sees a column it does not know.
+  const a = (ASSIGN||[]).find(x => x.id === id) || {};
+  const newlyMissed = ME.role !== 'teacher' && a.finisher_name
+                   && FIN_RESULT === 'missed' && a.finisher_result !== 'missed';
+  if (ME.role !== 'teacher' && a.finisher_name) patch.finisher_result = FIN_RESULT;
+  if (ME.role === 'teacher' && el('a-fin')){
+    const v = gv('a-fin');
+    // changing the instruction clears any result recorded against the old one
+    if (v !== 'keep' && v !== finisherValue(a)) Object.assign(patch, parseFinisher(v), {finisher_result: null});
+  }
+  try { await upd('assignments','id=eq.'+id, patch); }
+  catch(e){ toast('Not saved — ' + e.message.slice(0,60)); return; }
   closeSheet(); renderWeek();          // silent — no notify() here, deliberately
+  if (newlyMissed) toast('Missed — the drill is back on your week');
+}
+
+/* ── finishers ─────────────────────────────────────────────────────
+   Wes's ask, 5 Oct 2026: on each drill he assigns, either name the finisher
+   from a list he keeps, make her draw one on a wheel, or set none. A finisher
+   is the one pressure shot that ends a session.
+
+   The page only DISPLAYS the rules; migration 32 enforces them. The draw is
+   made in the database (spin_finisher) and written once, the student cannot
+   change the mode or the finisher on any row, and recording "missed" makes a
+   trigger put the drill back on the same day. So nothing here can be talked
+   round by reloading — which is the whole point of "force me". */
+let FINISHERS = [];
+let FIN_RESULT = null;       // made | missed | null, for the sheet that is open
+async function loadFinishers(){
+  FINISHERS = await selSoft('finishers', 'select=*&archived=eq.false&order=id.asc');
+  return FINISHERS;
+}
+
+// The one value a <select> holds for "what finisher does this row carry".
+function finisherValue(a){
+  const m = (a && a.finisher_mode) || 'none';
+  if (m === 'pick') return FINISHERS.some(f => f.id === a.finisher_id) ? 'f:' + a.finisher_id : 'keep';
+  return m;
+}
+function parseFinisher(v){
+  if (v && v.startsWith('f:')){
+    const f = FINISHERS.find(x => x.id === Number(v.slice(2)));
+    if (f) return {finisher_mode:'pick', finisher_id:f.id, finisher_name:f.name};
+  }
+  if (v === 'wheel') return {finisher_mode:'wheel', finisher_id:null, finisher_name:null};
+  return {finisher_mode:'none', finisher_id:null, finisher_name:null};
+}
+function finisherSelectHtml(id, a){
+  const cur = finisherValue(a);
+  const opt = (v, label) => `<option value="${v}" ${v===cur?'selected':''}>${esc(label)}</option>`;
+  return `<select id="${id}">
+    ${opt('none', 'No finisher')}
+    ${opt('wheel', 'Wheel — she spins at the drill')}
+    ${cur === 'keep' ? opt('keep', a.finisher_name + ' (no longer on the list)') : ''}
+    ${FINISHERS.map(f => opt('f:' + f.id, f.name)).join('')}
+  </select>`;
+}
+
+function finisherInnerHtml(a){
+  if (!a.finisher_name){            // a wheel row that has not been spun
+    return `<div class="dl" style="margin-top:0">Finisher</div>
+      <div class="empty" style="padding:0 0 8px">${esc(TEACHER_NAME)} set the wheel. Spin when the drill is finished — one spin, no second go.</div>
+      ${ME.role === 'teacher' ? '<div class="empty" style="padding:0">Not spun yet.</div>'
+        : `<button type="button" class="btn btnb" onclick="spinFinisher(${a.id})">Spin the wheel</button>`}`;
+  }
+  const f = FINISHERS.find(x => x.id === a.finisher_id) || {};
+  const res = ME.role === 'teacher'
+    ? `<div class="empty" style="padding:6px 0 0">${a.finisher_result
+         ? `Result: <b class="${a.finisher_result==='made'?'good':'bad'}">${a.finisher_result}</b>` : 'No result recorded yet.'}</div>`
+    : `<div class="rbtns" style="margin-top:9px">
+         <button type="button" id="fin-made" class="btn btns" onclick="setFinResult('made')">Made</button>
+         <button type="button" id="fin-missed" class="btn btns" onclick="setFinResult('missed')">Missed</button>
+       </div>
+       <div class="empty" style="padding:6px 0 0;font-size:11.5px">Missed = the drill comes back on this day.</div>`;
+  setTimeout(paintFinResult, 0);
+  return `<div class="dl" style="margin-top:0">Finisher${a.finisher_mode==='wheel' ? ' · from the wheel' : ''}</div>
+    <div style="font-size:15px;font-weight:700">${esc(a.finisher_name)}</div>
+    ${f.description ? `<div class="empty" style="padding:2px 0 0;white-space:pre-wrap">${esc(f.description)}</div>` : ''}
+    ${res}`;
+}
+// Tap to set, tap the same one again to clear.
+function setFinResult(v){
+  FIN_RESULT = (FIN_RESULT === v) ? null : v;
+  paintFinResult();
+}
+function paintFinResult(){
+  const m = el('fin-made'), x = el('fin-missed');
+  if (m) m.style.cssText = FIN_RESULT === 'made'   ? 'background:var(--gn);color:#0d1117;border-color:transparent' : '';
+  if (x) x.style.cssText = FIN_RESULT === 'missed' ? 'background:var(--rd);color:#0d1117;border-color:transparent' : '';
+}
+
+/* The wheel. The database has already drawn by the time anything turns: the
+   animation only reveals the answer, it never decides it. */
+function finWheelHtml(list){
+  const n = list.length, seg = 360 / n;
+  const cols = ['#60a5fa','#f0a640','#b39ddb','#4ade80','#f87171','#facc15'];
+  const stops = list.map((_, i) => `${cols[i % cols.length]} ${i*seg}deg ${(i+1)*seg}deg`).join(',');
+  const nums = list.map((_, i) => `<span style="position:absolute;left:50%;top:50%;transform-origin:0 0;
+      transform:rotate(${(i+.5)*seg}deg) translate(-50%,-78px);font-weight:800;font-size:15px;color:#0d1117">${i+1}</span>`).join('');
+  return `<div style="text-align:center">
+      <div style="font-size:18px;line-height:1;color:var(--ac)">▼</div>
+      <div id="fin-wheel" style="position:relative;width:190px;height:190px;margin:2px auto 10px;border-radius:50%;
+           border:3px solid var(--b1);background:conic-gradient(${stops});
+           transition:transform 3.2s cubic-bezier(.17,.67,.2,1)">${nums}</div>
+    </div>
+    <div class="empty" style="padding:0;font-size:11.5px;line-height:1.7">
+      ${list.map((f, i) => `${i+1} · ${esc(f.name)}`).join('<br>')}</div>`;
+}
+async function spinFinisher(aid){
+  const a = (ASSIGN||[]).find(x => x.id === aid);
+  if (!a) return;
+  let res;
+  try { res = await api('rpc/spin_finisher', {method:'POST', body:{aid}}); }
+  catch(e){ toast('No spin — ' + e.message.slice(0,70)); return; }
+  if (!res || !res.name){ toast('No spin — nothing came back'); return; }
+  const list = FINISHERS.slice();
+  let idx = list.findIndex(f => f.id === res.id);
+  if (idx < 0){ list.push({id:res.id, name:res.name}); idx = list.length - 1; }
+  const box = el('fin-box');
+  if (box) box.innerHTML = finWheelHtml(list);
+  const landed = () => {
+    a.finisher_id = res.id; a.finisher_name = res.name;
+    FIN_RESULT = null;
+    const b = el('fin-box');
+    if (b) b.innerHTML = finisherInnerHtml(a);
+  };
+  setTimeout(() => {
+    const w = el('fin-wheel');
+    if (w) w.style.transform = `rotate(${360*6 - (idx+.5)*(360/list.length)}deg)`;
+  }, 40);
+  setTimeout(landed, 3600);
+}
+
+function finishersCardHtml(){
+  const t = ME.role === 'teacher';
+  let h = `<div class="card"><div class="sect"><span>Finishers</span>
+      <span style="font-size:12px;color:var(--mu);font-weight:600">${FINISHERS.length}</span></div>
+    <div class="empty" style="padding:0 0 8px">The one pressure shot that ends a session. ${esc(TEACHER_NAME)} keeps this list; the wheel draws from all of it.</div>`;
+  for (const f of FINISHERS){
+    h += `<div class="drow" ${t ? `onclick="editFinisher(${f.id})"` : 'style="cursor:default"'}>
+      <div class="dn"><b>${esc(f.name)}</b><span style="white-space:pre-wrap;overflow:visible">${esc(f.description||'')}</span></div>
+      ${t ? '<span class="chev">›</span>' : ''}
+    </div>`;
+  }
+  if (!FINISHERS.length) h += `<div class="empty">No finishers yet.</div>`;
+  if (t) h += `<div class="rbtns"><button class="btn btns" onclick="editFinisher(null)">＋ New finisher</button></div>`;
+  return h + `</div>`;
+}
+function editFinisher(id){
+  const f = id ? FINISHERS.find(x => x.id === id) : {name:'', description:''};
+  if (!f) return;
+  openSheet(`
+    <div class="sheet-h"><b>${id ? 'Edit finisher' : 'New finisher'}</b><button class="sheet-x" onclick="closeSheet()">×</button></div>
+    <div class="fr"><label>Name</label><input type="text" id="f-name" value="${esc(f.name)}" placeholder="e.g. 4ft putt"></div>
+    <div class="fr"><label>Description</label><textarea id="f-desc" rows="4" placeholder="What exactly is the shot, and what counts as made?">${esc(f.description||'')}</textarea></div>
+    <div class="rbtns"><button class="btn btnp" onclick="saveFinisher(${id||'null'})">Save</button>
+      ${id ? `<button class="btn btnd" onclick="archiveFinisher(${id})">Archive</button>` : ''}
+      <button class="btn" onclick="closeSheet()">Cancel</button></div>`);
+}
+async function saveFinisher(id){
+  const name = gv('f-name');
+  if (!name){ toast('Give it a name'); return; }
+  const row = {name, description: gv('f-desc') || null};
+  try { id ? await upd('finishers','id=eq.'+id, row) : await ins('finishers', row); }
+  catch(e){ toast('Not saved — ' + e.message.slice(0,60)); return; }
+  closeSheet(); renderDrills();
+}
+// Archived, not deleted: rows that already carry it keep their own copy of the
+// name, and it simply stops coming up on the wheel.
+async function archiveFinisher(id){
+  if (!confirm('Take this finisher off the list? Drills that already carry it keep it.')) return;
+  try { await upd('finishers','id=eq.'+id, {archived:true}); }
+  catch(e){ toast('Not archived — ' + e.message.slice(0,60)); return; }
+  closeSheet(); renderDrills();
 }
 async function moveToTray(id){ closeSheet(); await placeAssignment(id, null); }
 /* The database is the real guard (migration 19: only the teacher may delete a
@@ -1665,7 +1854,9 @@ function toggleOtherSource(){
 }
 
 async function renderDrills(){
-  DRILLS = await sel('drills', 'select=*&archived=eq.false&order=category.asc,name.asc') || [];
+  [DRILLS] = await Promise.all([
+    sel('drills', 'select=*&archived=eq.false&order=category.asc,name.asc'), loadFinishers()]);
+  DRILLS = DRILLS || [];
   let h = `<div class="rbtns" style="margin:0 0 12px"><button class="btn btnp" onclick="editDrill(null)">＋ New drill or game</button></div>`;
   for (const c of CATS){
     const list = DRILLS.filter(d => d.category === c.id);
@@ -1683,6 +1874,7 @@ async function renderDrills(){
     h += `</div>`;
   }
   if (!DRILLS.length) h += `<div class="card"><div class="empty">Library is empty. Add the first drill.</div></div>`;
+  h += finishersCardHtml();
   el('pg-drills').innerHTML = h;
 }
 
@@ -1705,6 +1897,7 @@ async function openDrill(id){
     ${d.photo_path ? `<img src="${photoUrl(d.photo_path)}" alt="" loading="lazy"
        style="width:100%;border-radius:9px;border:1px solid var(--b1);display:block;margin-bottom:14px">` : ''}
     ${sparkHtml(hist)}
+    ${ME.role !== 'teacher' ? '' : `<div class="dl">Finisher</div>${finisherSelectHtml('as-fin', null)}`}
     <div class="dl">Assign to</div>
     <div class="rbtns" style="margin-top:0">
       ${targets.map(t => `<button class="btn btnb btns" onclick="assignDrill(${d.id},'${ymd(t.d)}')">${t.label}</button>`).join('')}
@@ -1743,15 +1936,23 @@ function sparkHtml(hist){
 
 async function assignDrill(drillId, weekStart){
   const byTeacher = ME.role === 'teacher';
-  await ins('assignments', {
+  const row = {
     student_id: STUDENT_ID, drill_id: drillId, week_start: weekStart,
     day_index: null, assigned_by: byTeacher ? 'teacher' : 'student',
-  });
+  };
+  // Only his sheet has the picker, and "no finisher" adds no columns — so an
+  // assignment without one saves exactly as it did before migration 32.
+  const fin = byTeacher && el('as-fin') ? parseFinisher(gv('as-fin')) : null;
+  if (fin && fin.finisher_mode !== 'none') Object.assign(row, fin);
+  try { await ins('assignments', row); }
+  catch(e){ toast('Not assigned — ' + e.message.slice(0,60)); return; }
   const d = DRILLS.find(x => x.id === drillId) || {};
   if (byTeacher){
     // Events → Astrid: drill assigned. (The other one is "feedback ready".)
+    const withFin = !fin || fin.finisher_mode === 'none' ? ''
+                  : fin.finisher_mode === 'wheel' ? ' Finisher: the wheel.' : ` Finisher: ${fin.finisher_name}.`;
     await notify(STUDENT_NAME,
-      `${TEACHER_NAME} has assigned you a drill for the week of ${fmtRange(parseYmd(weekStart))}: ${d.name}. It's waiting in your open assignments.`);
+      `${TEACHER_NAME} has assigned you a drill for the week of ${fmtRange(parseYmd(weekStart))}: ${d.name}.${withFin} It's waiting in your open assignments.`);
   }
   closeSheet();
   toast(byTeacher ? 'Assigned — Astrid notified' : 'Added to your open assignments');
@@ -4267,7 +4468,12 @@ async function renderSummary(){
 
   const mapA = l => l.map(a => ({done:!!a.done, name:aName(a,'—'), score:a.score,
                                 outOf:a.out_of,
-                                when:(weekDays()[a.day_index]||{}).label, note:a.note}));
+                                when:(weekDays()[a.day_index]||{}).label,
+                                // the finisher rides in the note line: what it was and how it went
+                                note:[a.repeat_of ? 'repeat' : '',
+                                      a.finisher_name ? `finisher ${a.finisher_name}: ${a.finisher_result || 'no result'}`
+                                        : (a.finisher_mode === 'wheel' ? 'finisher: wheel, not spun' : ''),
+                                      a.note || ''].filter(Boolean).join(' · ') || null}));
 
   let h = weekNavHtml(fmtRange(WEEK));
 
