@@ -150,15 +150,26 @@ ${externals.join('\n;\n')}
   check('a quick-add round with no card', playedTo({course_id:1, is_simple:true, holes_data:null}), null);
   check('a course_id pointing at nothing', playedTo({course_id:404, holes_data: mkCard(18, 89)}), null);
 
-  // ── 4 · NINE HOLES: scaled, and SAID to be scaled ──────────────────────
-  // 9 holes at 44 is a gross of 88 over 18 — one shot better than the 89 above.
+  // ── 4 · NINE HOLES: the WHS 2024 rule, and SAID to be partial ──────────
+  // 9 holes at 44 off West/Rot: the nine itself is worth 4.4; the nine NOT
+  // played is filled with the expected differential for an 8.9 (5.95), so the
+  // day is 10.4. Doubling the nine — the pre-2024 method, and what this app did
+  // until 13 Oct 2026 — would have said 8.9, one better than the 89 above,
+  // which is how a +4 nine with two needless three-putts came out "4.1".
   const nine = { id: 3, date:'2026-06-17', course_id: 1, holes_data: mkCard(9, 44) };
   const p9 = playedTo(nine);
   check('9 scored holes produce a figure', !!p9, true);
   check('...marked as scaled', p9.scaled, true);
   check('...and says how many holes it came from', p9.holes, 9);
-  near('...scaled to 18 before pricing', p9.val, 8.9);
-  check('...printed with a tilde', playedToTxt(p9), '~8.9');
+  near('...the nine played + the expected nine, not the nine doubled', p9.val, 10.4);
+  check('...printed with a tilde', playedToTxt(p9), '~10.4');
+  // Her 12 Oct back nine: 41 on par 37. 8.0, not 4.1 — a little better than goal pace.
+  near('12 Oct: 41 on the back nine is 8.0, not 4.1', playedTo({course_id:1, holes_data: mkCard(9, 41)}).val, 8.0);
+  // A nine can be great; it cannot be scratch golf on its own. 38 (+2) → 5.6.
+  near('a +2 nine is bright green, not negative', playedTo({course_id:1, holes_data: mkCard(9, 38)}).val, 5.6);
+  // The expected nine follows the goal, so a nine played exactly at the
+  // expected level comes out at the goal plus the WHS 1.5 "typical day" margin.
+  check('EXPECTED_NINE is half the goal plus 1.5', Math.round(EXPECTED_NINE * 100) / 100, 5.95);
 
   // These four cards are replayed byte-for-byte by James's played_to_test.py.
   // Two implementations of one number is the arrangement the spec asks for; the
@@ -166,8 +177,8 @@ ${externals.join('\n;\n')}
   // in the app while the Sunday digest tells Wes 9.8 about the same round.
   near('cross-check · 18 holes, 89', playedTo({course_id:1, holes_data: mkCard(18, 89)}).val, 9.7);
   near('cross-check · 18 holes, 89 off black', playedTo({course_id:2, holes_data: mkCard(18, 89)}).val, 7.9);
-  near('cross-check · 9 holes, 44', playedTo({course_id:1, holes_data: mkCard(9, 44)}).val, 8.9);
-  near('cross-check · 17 holes, 83', playedTo({course_id:1, holes_data: mkCard(17, 83)}).val, 8.8);
+  near('cross-check · 9 holes, 44', playedTo({course_id:1, holes_data: mkCard(9, 44)}).val, 10.4);
+  near('cross-check · 17 holes, 83', playedTo({course_id:1, holes_data: mkCard(17, 83)}).val, 9.0);
 
   // ── 5 · THE CHIP: a figure, or the ONE tap that is missing ─────────────
   ROUNDS = [];
@@ -306,6 +317,15 @@ ${externals.join('\n;\n')}
   try { m = GOAL_METRICS.comp_social_gap(mixed); } catch(e){ m = {threw: String(e.message)}; }
   check('comp_social_gap does not throw', !m.threw, true);
   check('...and is in handicap units now', String(m.txt).indexOf('shots worse under a card') !== -1, true);
+
+  // ── 7b · THE THREE BOXES show both readings ────────────────────────────
+  // Her question, 13 Oct: "are these played-to or just over par?" Over-par on
+  // top, played-to under it, in every box.
+  ROUNDS = mixed;
+  const boxes = roundStatsHtml();
+  check('the three boxes keep over-par', boxes.indexOf('Ø comp /18') !== -1, true);
+  check('...and gain a played-to line', (boxes.match(/played to -?\\d/g) || []).length, 3);
+  ROUNDS = [];
 
   // ── 8 · ONE READER ─────────────────────────────────────────────────────
   // The five-shot Colony fudge was a stand-in for exactly this data. If it is

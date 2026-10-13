@@ -121,24 +121,49 @@ const courseLabel = c => c ? `${c.name} · ${c.tee}` : '';
    (free-text holiday course, or a two-tee course whose tee is unknown), the
    row has no rating typed in yet, or fewer than 9 holes are scored.
 
-   PARTIAL CARDS ARE SCALED TO 18 and marked, exactly as the Tournaments page
-   already scales the gross — same rule, same minimum, so the two pages cannot
-   disagree about what a 17-hole card is worth. No 9-hole ratings: her nine-hole
-   comps are played on half of an 18-hole course and the 18-hole rating is the
-   honest yardstick for them.
+   PARTIAL CARDS — THE WHS 2024 RULE, NOT A DOUBLED NINE. Until 13 Oct 2026
+   a nine was scaled to 18 (gross × 2) and priced against the 18-hole rating.
+   That is the method the World Handicap System dropped in 2024, because it
+   assumes the nine she did NOT play would have gone exactly as well as the
+   one she did: it put her eight Colony nines at an average of 2.9 while her
+   18s ran 9–10, and yesterday's +4 back nine with two needless three-putts
+   came out as "played to 4.1". One nine is half the evidence and must not
+   count twice.
+
+   WHS now prices the holes played on their own and fills the holes NOT played
+   with the EXPECTED differential for a player of her index — roughly half the
+   index plus 1.5 (the USGA worked example: index 14.0, a 9-hole differential
+   of 7.2, becomes 15.7 for the day; the pre-2024 "net par + 1" rule lands in
+   the same place). So for n scored holes:
+
+       (gross_n − cr × n/18) × 113 / slope  +  EXPECTED_NINE × (18 − n) / 9
+
+   For 18 holes the second term is zero and nothing changes. The index that
+   stands in for the unplayed holes is the 8.9 GOAL — the fixed post she chose
+   on 12 Sep — not her moving index, which the app does not hold (rule of
+   6 Aug). Her ÖGV record uses her real index, ~10.5 in autumn 2026, so this
+   reads about 0.8 kinder than the official figure on a nine; stated here
+   rather than fixed with a "current index" box she would have to keep up.
+
+   Still no 9-hole ratings: the nine is priced at n/18 of the 18-hole rating.
+   Colony's two nines differ by a few tenths at most; not worth four more
+   fields per course.
 
    NO NET-DOUBLE-BOGEY CAP, although the stroke index is on her sheets: the cap
    needs her playing handicap ON THE DAY, which is the moving post she has just
    rejected. Uncapped is a little harsh on blow-up rounds and exact on good
    ones, which is the right way round for a number she is chasing down. */
+const EXPECTED_NINE = HCP_GOAL / 2 + 1.5;   // what a 9 at the goal is expected to be worth
 function playedTo(r, course){
   const c = (course === undefined) ? courseOf(r) : course;
   if (!c || c.cr == null || c.slope == null) return null;
   const p = ((r && r.holes_data) || []).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
-  if (p.length < 9) return null;
-  const gross18 = p.reduce((a,h)=>a+Number(h.score), 0) * 18 / p.length;
-  return {val: (gross18 - Number(c.cr)) * 113 / Number(c.slope),
-          holes: p.length, scaled: p.length !== 18};
+  const n = p.length;
+  if (n < 9) return null;
+  const gross = p.reduce((a,h)=>a+Number(h.score), 0);
+  const played = (gross - Number(c.cr) * n / 18) * 113 / Number(c.slope);
+  return {val: played + EXPECTED_NINE * (18 - n) / 9,
+          holes: n, scaled: n !== 18};
 }
 
 const playedToTxt = pt => (pt.scaled ? '~' : '') + pt.val.toFixed(1);
@@ -2580,6 +2605,15 @@ function roundStatsHtml(){
   const fS=v=>v==null?'—':((v>0?'+':'')+(Math.round(v*10)/10).toFixed(1));
   const sD=g=>mean(rs.filter(g).filter(x=>x.delta!=null&&x.n>=9).map(x=>sc(x.delta,x.n)));
   const dAll=sD(()=>true), dComp=sD(x=>x.comp), dNorm=sD(x=>!x.comp);
+  /* The same three boxes in "played to", under the over-par. Her question,
+     13 Oct 2026: "are these played-to or just over par? can you show both?"
+     Over-par stays on top because it is what she and Wes say out loud; the
+     course-fair reading sits under it, averaged over the rounds that HAVE a
+     figure (rated course, 9+ holes), so the two lines can draw on slightly
+     different rounds — a holiday course counts above and not below. */
+  const sP=g=>mean(ROUNDS.filter(r=>!r.stats_excluded&&g(!!r.comp)).map(r=>playedTo(r)).filter(Boolean).map(pt=>pt.val));
+  const pAll=sP(()=>true), pComp=sP(c=>c), pNorm=sP(c=>!c);
+  const pLine=v=>v==null?'':`<div style="font-size:12px;font-weight:600;color:${playedToBand(v)};margin-top:2px">played to ${v.toFixed(1)}</div>`;
   const M=[
     {l:'Doubles+',      g:x=>x.db, bad:1},
     {l:'3-putts',       g:x=>x.p3, bad:1},
@@ -2605,9 +2639,9 @@ function roundStatsHtml(){
   const carrot=resilient||strong;
 
   let h=`<div class="mgrid">
-    <div class="mc"><div class="mv">${fS(dAll)}</div><div class="ml">Ø /18</div></div>
-    <div class="mc"><div class="mv">${fS(dComp)}</div><div class="ml">Ø comp /18</div></div>
-    <div class="mc"><div class="mv">${fS(dNorm)}</div><div class="ml">Ø social /18</div></div>
+    <div class="mc"><div class="mv">${fS(dAll)}</div>${pLine(pAll)}<div class="ml">Ø /18</div></div>
+    <div class="mc"><div class="mv">${fS(dComp)}</div>${pLine(pComp)}<div class="ml">Ø comp /18</div></div>
+    <div class="mc"><div class="mv">${fS(dNorm)}</div>${pLine(pNorm)}<div class="ml">Ø social /18</div></div>
   </div>`;
   if(workOn){
     const sub=workOn.delta!=null?`${f1(workOn.nv)} social → ${f1(workOn.cv)} comp · ${sg(workOn.delta)} under pressure`:`${f1(workOn.av)} per 18`;
@@ -2775,7 +2809,7 @@ function playedToChipHtml(r){
   if (pt)
     return `<span style="font-weight:700;color:${playedToBand(pt.val)}"
       title="What this round was worth as a handicap: (gross − course rating) × 113 / slope, against her goal of ${HCP_GOAL}.${
-        pt.scaled ? ` Scaled to 18 from ${pt.holes} scored holes.` : ''}">played to ${playedToTxt(pt)}</span>`;
+        pt.scaled ? ` ${pt.holes} holes scored; the other ${18-pt.holes} priced at the expected score for a ${HCP_GOAL} (WHS 2024 rule, not a doubled nine).` : ''}">played to ${playedToTxt(pt)}</span>`;
   const c = courseOf(r);
   if (c && (c.cr == null || c.slope == null))
     return `<span class="btn btns" style="padding:0 6px;cursor:pointer"
