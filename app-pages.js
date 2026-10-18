@@ -2450,6 +2450,26 @@ const inPosition = h => {
   return ap !== 'x' && sh !== 'c';
 };
 
+/* IN-POSITION COLOURS — recalibrated 18 Oct 2026 against her own rounds.
+
+   The 60/45 cutoffs dated from 5 Aug, when the predicate still counted a
+   missed quadrant (`m`) as a lost hole. The 13 Aug rule above dropped `m`,
+   so the same holes read higher and the cutoffs were left where they were,
+   knowingly, until enough rounds had been played under the new rule.
+
+   Measured over the 17 counted rounds from 5 Aug to 25 Sep (269 scored
+   holes): old rule 59.5%, new rule 82.5% on the SAME holes — a 23-point
+   shift, near-identical for comp (+25) and social (+22). The old green
+   line sat exactly at her running level, so the new one does too: green
+   from 83 (15 of 18 holes in position), amber from 68 (13 of 18), red
+   below. The amber band stays two holes wide, as it was (9-10 of 18 under
+   the old rule). Not round numbers on purpose — see the goal-metrics
+   preamble: a cutoff invented for tidiness is one the page cannot defend.
+   Per-round spread under the new rule: 56-100, median 83, so a single bad
+   round still shows red and a clean one still shows green. */
+const POS_GOOD = 83;
+const POS_WARN = 68;
+
 /* ── stats (verbatim logic from the tracker) ─────────────────── */
 function deriveRoundStats(hd){
   const Z={n:0,delta:null,gir:null,fw:null,ud:null,p3:null,db:null,b5:null,pen:null,bs:null,
@@ -4269,7 +4289,7 @@ function cumScorecardHtml(rounds){
     ['Holes',  scored.length, null],
     ['vs par', (delta > 0 ? '+' : '') + delta, delta <= 0],
     ['GIR',    pc(h => h.gir) + '%', pc(h => h.gir) >= 50],
-    ['In position', pc(inPosition) + '%', pc(inPosition) >= 60],
+    ['In position', pc(inPosition) + '%', pc(inPosition) >= POS_GOOD],
     ['Putts',  tot('putts') || '\u00b7', null],
   ];
   const cell = 'padding:3px 5px;text-align:center;white-space:nowrap';
@@ -4627,7 +4647,7 @@ async function renderSummary(){
   }
 
   h += `<div class="card"><div class="ct"><span>Rounds this week</span>${
-      wkQuad!=null?`<span class="bg ${wkQuad>=60?'bg-good':wkQuad>=45?'bg-warn':'bg-bad'}">In position ${wkQuad}%</span>`:''}</div>`;
+      wkQuad!=null?`<span class="bg ${wkQuad>=POS_GOOD?'bg-good':wkQuad>=POS_WARN?'bg-warn':'bg-bad'}">In position ${wkQuad}%</span>`:''}</div>`;
   if (wkQuad!=null && (wkComp!=null||wkSoc!=null))
     h += `<div class="empty" style="padding:0 0 9px;font-size:12px">Holes that offered a realistic putt at par · ${
       [wkSoc!=null?`social ${wkSoc}%`:null, wkComp!=null?`comp ${wkComp}%`:null].filter(Boolean).join(' · ')
