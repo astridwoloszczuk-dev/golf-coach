@@ -1282,11 +1282,13 @@ function aName(a, dash){
 
 function pillHtml(a){
   const d = a.drills || {};
-  // ◎ = carries a finisher; green once made, red once missed. ↻ = this row
-  // exists because the last finisher was missed.
-  const fm = (a.finisher_mode || 'none') === 'none' ? '' :
+  // ◎ = the finisher is known (named by Wes, or rolled); green once made, red
+  // once missed. Every drill ends with one — the dice by default — so the mark
+  // only appears once there is something to show. ↻ = this row exists because
+  // the last finisher was missed.
+  const fm = !a.finisher_name ? '' :
     `<span class="sc ${a.finisher_result==='made'?'good':a.finisher_result==='missed'?'bad':''}"
-           title="Finisher${a.finisher_name ? ': '+esc(a.finisher_name) : ' — wheel, not spun yet'}">◎</span>`;
+           title="Finisher: ${esc(a.finisher_name)}">◎</span>`;
   return `<span class="pill by-${a.assigned_by} ${a.done?'done':''}" data-aid="${a.id}">
     ${a.repeat_of ? '<span class="sc" title="Repeat — the finisher was missed">↻</span>' : ''}
     <span class="nm">${esc(aName(a))}</span>
@@ -1424,7 +1426,7 @@ function openAssignmentSheet(a){
                title="Holes or reps this score was measured over (optional)"
                style="flex:0 0 66px">
       </div></div>`}
-    ${(a.finisher_mode || 'none') === 'none' ? '' : `<div id="fin-box" style="margin-bottom:12px">${finisherInnerHtml(a)}</div>`}
+    ${!a.drill_id ? '' : `<div id="fin-box" style="margin-bottom:12px">${finisherInnerHtml(a)}</div>`}
     ${ME.role !== 'teacher' ? '' : `<div class="fr"><label>Finisher</label>${finisherSelectHtml('a-fin', a)}</div>`}
     <div class="fr"><label>Note</label><textarea id="a-note" rows="2" placeholder="How did it actually go?">${esc(a.note||'')}</textarea></div>
     <div class="rbtns">
@@ -1475,12 +1477,19 @@ async function saveAssignment(id){
 }
 
 /* ── finishers ─────────────────────────────────────────────────────
-   Wes's ask, 5 Oct 2026: on each drill he assigns, either name the finisher
-   from a list he keeps, make her draw one on a wheel, or set none. A finisher
-   is the one pressure shot that ends a session.
+   Wes's ask, 5 Oct 2026: on each drill he assigns, name the finisher from a
+   list he keeps. A finisher is the one pressure shot that ends a session.
 
-   The page only DISPLAYS the rules; migration 32 enforces them. The draw is
-   made in the database (spin_finisher) and written once, the student cannot
+   Astrid, 18 Oct 2026, having read his list (4ft putt, First-hole drive, The
+   Finisher, Roll It): EVERY drill ends with a finisher — the one Wes named, or
+   else THE DICE. Roll It is a twelve-sided dice: his description lists what
+   each number demands (the short putt and the first drive are among the
+   faces), so the wheel of migration 32 is gone and the dice replaces it. A
+   finisher written as a numbered list IS the dice — Wes edits plain text in
+   the app, nothing else is configured.
+
+   The page only DISPLAYS the rules; migrations 32 + 33 enforce them. The roll
+   is made in the database (spin_finisher) and written once, the student cannot
    change the mode or the finisher on any row, and recording "missed" makes a
    trigger put the drill back on the same day. So nothing here can be talked
    round by reloading — which is the whole point of "force me". */
@@ -1491,39 +1500,75 @@ async function loadFinishers(){
   return FINISHERS;
 }
 
+// The faces of a finisher written as a numbered list ("1 - Up and down from
+// 10 yards…"); a wrapped line belongs to the face above. Same parse as
+// finisher_faces() in migration 33 — the database rolls, this only reads.
+function finisherFaces(desc){
+  const faces = []; let cur = null;
+  for (const line of String(desc || '').split(/\r?\n/)){
+    const m = line.match(/^\s*(\d{1,2})\s*[-–.:)]\s*(\S.*)$/);
+    if (m){ if (cur) faces.push(cur); cur = {n:Number(m[1]), text:m[2].trim()}; }
+    else if (cur && line.trim()) cur.text += ' ' + line.trim();
+  }
+  if (cur) faces.push(cur);
+  return faces;
+}
+// The first finisher on the list with at least two faces — null if Wes has none.
+function diceFinisher(){
+  return FINISHERS.find(f => finisherFaces(f.description).length >= 2) || null;
+}
+function isDiceRow(a){
+  const d = diceFinisher();
+  return !!d && a.finisher_id === d.id;
+}
+// A row's finisher is decided when it carries a name — except the bare name of
+// the dice, which Wes picking "Roll It" leaves: that is a dice not yet rolled.
+function finisherRolled(a){
+  if (!a.finisher_name) return false;
+  const d = diceFinisher();
+  return !(d && a.finisher_id === d.id && a.finisher_name === d.name);
+}
+
 // The one value a <select> holds for "what finisher does this row carry".
+// 'none' = the dice (the default); the legacy 'wheel' reads as the dice too.
 function finisherValue(a){
   const m = (a && a.finisher_mode) || 'none';
-  if (m === 'pick') return FINISHERS.some(f => f.id === a.finisher_id) ? 'f:' + a.finisher_id : 'keep';
-  return m;
+  if (m === 'pick' && a.finisher_id != null){
+    if (!FINISHERS.some(f => f.id === a.finisher_id)) return 'keep';
+    return isDiceRow(a) ? 'none' : 'f:' + a.finisher_id;
+  }
+  return 'none';
 }
 function parseFinisher(v){
   if (v && v.startsWith('f:')){
     const f = FINISHERS.find(x => x.id === Number(v.slice(2)));
     if (f) return {finisher_mode:'pick', finisher_id:f.id, finisher_name:f.name};
   }
-  if (v === 'wheel') return {finisher_mode:'wheel', finisher_id:null, finisher_name:null};
   return {finisher_mode:'none', finisher_id:null, finisher_name:null};
 }
 function finisherSelectHtml(id, a){
   const cur = finisherValue(a);
+  const dice = diceFinisher();
   const opt = (v, label) => `<option value="${v}" ${v===cur?'selected':''}>${esc(label)}</option>`;
   return `<select id="${id}">
-    ${opt('none', 'No finisher')}
-    ${opt('wheel', 'Wheel — she spins at the drill')}
+    ${opt('none', dice ? `${dice.name} — the dice (default)` : 'The dice (no numbered list on the finishers yet)')}
     ${cur === 'keep' ? opt('keep', a.finisher_name + ' (no longer on the list)') : ''}
-    ${FINISHERS.map(f => opt('f:' + f.id, f.name)).join('')}
+    ${FINISHERS.filter(f => !dice || f.id !== dice.id).map(f => opt('f:' + f.id, f.name)).join('')}
   </select>`;
 }
 
 function finisherInnerHtml(a){
-  if (!a.finisher_name){            // a wheel row that has not been spun
+  const dice = diceFinisher();
+  if (!finisherRolled(a)){          // the dice, not rolled yet
     return `<div class="dl" style="margin-top:0">Finisher</div>
-      <div class="empty" style="padding:0 0 8px">${esc(TEACHER_NAME)} set the wheel. Spin when the drill is finished — one spin, no second go.</div>
-      ${ME.role === 'teacher' ? '<div class="empty" style="padding:0">Not spun yet.</div>'
-        : `<button type="button" class="btn btnb" onclick="spinFinisher(${a.id})">Spin the wheel</button>`}`;
+      <div class="empty" style="padding:0 0 8px">${dice
+        ? `${esc(dice.name)}. Roll when the drill is finished — one roll, no second go.`
+        : `${esc(TEACHER_NAME)} has no dice on his list yet (a finisher written as a numbered list).`}</div>
+      ${ME.role === 'teacher' ? '<div class="empty" style="padding:0">Not rolled yet.</div>'
+        : (dice ? `<button type="button" class="btn btnb" onclick="rollFinisher(${a.id})">🎲 Roll the dice</button>` : '')}`;
   }
   const f = FINISHERS.find(x => x.id === a.finisher_id) || {};
+  const fromDice = isDiceRow(a);
   const res = ME.role === 'teacher'
     ? `<div class="empty" style="padding:6px 0 0">${a.finisher_result
          ? `Result: <b class="${a.finisher_result==='made'?'good':'bad'}">${a.finisher_result}</b>` : 'No result recorded yet.'}</div>`
@@ -1533,9 +1578,10 @@ function finisherInnerHtml(a){
        </div>
        <div class="empty" style="padding:6px 0 0;font-size:11.5px">Missed = the drill comes back on this day.</div>`;
   setTimeout(paintFinResult, 0);
-  return `<div class="dl" style="margin-top:0">Finisher${a.finisher_mode==='wheel' ? ' · from the wheel' : ''}</div>
+  // a rolled face carries its own text in the name; the whole list is not repeated under it
+  return `<div class="dl" style="margin-top:0">Finisher${fromDice ? ' · from the dice' : ''}</div>
     <div style="font-size:15px;font-weight:700">${esc(a.finisher_name)}</div>
-    ${f.description ? `<div class="empty" style="padding:2px 0 0;white-space:pre-wrap">${esc(f.description)}</div>` : ''}
+    ${!fromDice && f.description ? `<div class="empty" style="padding:2px 0 0;white-space:pre-wrap">${esc(f.description)}</div>` : ''}
     ${res}`;
 }
 // Tap to set, tap the same one again to clear.
@@ -1549,56 +1595,58 @@ function paintFinResult(){
   if (x) x.style.cssText = FIN_RESULT === 'missed' ? 'background:var(--rd);color:#0d1117;border-color:transparent' : '';
 }
 
-/* The wheel. The database has already drawn by the time anything turns: the
-   animation only reveals the answer, it never decides it. */
-function finWheelHtml(list){
-  const n = list.length, seg = 360 / n;
-  const cols = ['#60a5fa','#f0a640','#b39ddb','#4ade80','#f87171','#facc15'];
-  const stops = list.map((_, i) => `${cols[i % cols.length]} ${i*seg}deg ${(i+1)*seg}deg`).join(',');
-  const nums = list.map((_, i) => `<span style="position:absolute;left:50%;top:50%;transform-origin:0 0;
-      transform:rotate(${(i+.5)*seg}deg) translate(-50%,-78px);font-weight:800;font-size:15px;color:#0d1117">${i+1}</span>`).join('');
+/* The dice. The database has already rolled by the time anything moves: the
+   tumble only reveals the number, it never decides it. */
+function finDiceHtml(faces){
   return `<div style="text-align:center">
-      <div style="font-size:18px;line-height:1;color:var(--ac)">▼</div>
-      <div id="fin-wheel" style="position:relative;width:190px;height:190px;margin:2px auto 10px;border-radius:50%;
-           border:3px solid var(--b1);background:conic-gradient(${stops});
-           transition:transform 3.2s cubic-bezier(.17,.67,.2,1)">${nums}</div>
+      <div id="fin-die" style="display:inline-flex;align-items:center;justify-content:center;width:96px;height:96px;
+           margin:4px auto 10px;border-radius:22px;border:3px solid var(--b1);background:var(--ac);color:#0d1117;
+           font-weight:800;font-size:44px;line-height:1;transition:transform .1s">·</div>
     </div>
     <div class="empty" style="padding:0;font-size:11.5px;line-height:1.7">
-      ${list.map((f, i) => `${i+1} · ${esc(f.name)}`).join('<br>')}</div>`;
+      ${faces.map(f => `${f.n} · ${esc(f.text)}`).join('<br>')}</div>`;
 }
-async function spinFinisher(aid){
+async function rollFinisher(aid){
   const a = (ASSIGN||[]).find(x => x.id === aid);
   if (!a) return;
   let res;
   try { res = await api('rpc/spin_finisher', {method:'POST', body:{aid}}); }
-  catch(e){ toast('No spin — ' + e.message.slice(0,70)); return; }
-  if (!res || !res.name){ toast('No spin — nothing came back'); return; }
-  const list = FINISHERS.slice();
-  let idx = list.findIndex(f => f.id === res.id);
-  if (idx < 0){ list.push({id:res.id, name:res.name}); idx = list.length - 1; }
-  const box = el('fin-box');
-  if (box) box.innerHTML = finWheelHtml(list);
+  catch(e){ toast('No roll — ' + e.message.slice(0,70)); return; }
+  if (!res || !res.name){ toast('No roll — nothing came back'); return; }
   const landed = () => {
     a.finisher_id = res.id; a.finisher_name = res.name;
     FIN_RESULT = null;
     const b = el('fin-box');
     if (b) b.innerHTML = finisherInnerHtml(a);
   };
-  setTimeout(() => {
-    const w = el('fin-wheel');
-    if (w) w.style.transform = `rotate(${360*6 - (idx+.5)*(360/list.length)}deg)`;
-  }, 40);
-  setTimeout(landed, 3600);
+  const faces = Array.isArray(res.faces) && res.faces.length ? res.faces
+              : finisherFaces((diceFinisher() || {}).description);
+  if (res.already || !res.face || !faces.length){ landed(); return; }
+  const box = el('fin-box');
+  if (box) box.innerHTML = finDiceHtml(faces);
+  // tumble: random faces, slowing down, then the real one holds for a moment
+  const steps = 16; let t = 0;
+  const tick = () => {
+    const die = el('fin-die');
+    if (!die) return;
+    t++;
+    const last = t >= steps;
+    die.textContent = last ? res.face : faces[Math.floor(Math.random() * faces.length)].n;
+    die.style.transform = last ? 'none' : `rotate(${t % 2 ? 9 : -9}deg)`;
+    if (!last) setTimeout(tick, 60 + t * 22); else setTimeout(landed, 1400);
+  };
+  setTimeout(tick, 40);
 }
 
 function finishersCardHtml(){
   const t = ME.role === 'teacher';
   let h = `<div class="card"><div class="sect"><span>Finishers</span>
       <span style="font-size:12px;color:var(--mu);font-weight:600">${FINISHERS.length}</span></div>
-    <div class="empty" style="padding:0 0 8px">The one pressure shot that ends a session. ${esc(TEACHER_NAME)} keeps this list; the wheel draws from all of it.</div>`;
+    <div class="empty" style="padding:0 0 8px">The one pressure shot that ends a session. ${esc(TEACHER_NAME)} keeps this list. A finisher written as a numbered list is the dice 🎲: she rolls it when the drill is done, and every drill without a named finisher gets the dice.</div>`;
+  const dice = diceFinisher();
   for (const f of FINISHERS){
     h += `<div class="drow" ${t ? `onclick="editFinisher(${f.id})"` : 'style="cursor:default"'}>
-      <div class="dn"><b>${esc(f.name)}</b><span style="white-space:pre-wrap;overflow:visible">${esc(f.description||'')}</span></div>
+      <div class="dn"><b>${dice && f.id === dice.id ? '🎲 ' : ''}${esc(f.name)}</b><span style="white-space:pre-wrap;overflow:visible">${esc(f.description||'')}</span></div>
       ${t ? '<span class="chev">›</span>' : ''}
     </div>`;
   }
@@ -1626,7 +1674,8 @@ async function saveFinisher(id){
   closeSheet(); renderDrills();
 }
 // Archived, not deleted: rows that already carry it keep their own copy of the
-// name, and it simply stops coming up on the wheel.
+// name, and it simply leaves the picker (archiving the dice = no dice until
+// another numbered list is on it).
 async function archiveFinisher(id){
   if (!confirm('Take this finisher off the list? Drills that already carry it keep it.')) return;
   try { await upd('finishers','id=eq.'+id, {archived:true}); }
@@ -1965,8 +2014,8 @@ async function assignDrill(drillId, weekStart){
     student_id: STUDENT_ID, drill_id: drillId, week_start: weekStart,
     day_index: null, assigned_by: byTeacher ? 'teacher' : 'student',
   };
-  // Only his sheet has the picker, and "no finisher" adds no columns — so an
-  // assignment without one saves exactly as it did before migration 32.
+  // Only his sheet has the picker, and the default (the dice) adds no columns —
+  // so an assignment without a named finisher saves exactly as it always did.
   const fin = byTeacher && el('as-fin') ? parseFinisher(gv('as-fin')) : null;
   if (fin && fin.finisher_mode !== 'none') Object.assign(row, fin);
   try { await ins('assignments', row); }
@@ -1974,8 +2023,7 @@ async function assignDrill(drillId, weekStart){
   const d = DRILLS.find(x => x.id === drillId) || {};
   if (byTeacher){
     // Events → Astrid: drill assigned. (The other one is "feedback ready".)
-    const withFin = !fin || fin.finisher_mode === 'none' ? ''
-                  : fin.finisher_mode === 'wheel' ? ' Finisher: the wheel.' : ` Finisher: ${fin.finisher_name}.`;
+    const withFin = fin && fin.finisher_mode === 'pick' ? ` Finisher: ${fin.finisher_name}.` : ' Finisher: the dice.';
     await notify(STUDENT_NAME,
       `${TEACHER_NAME} has assigned you a drill for the week of ${fmtRange(parseYmd(weekStart))}: ${d.name}.${withFin} It's waiting in your open assignments.`);
   }
@@ -4526,7 +4574,7 @@ async function renderSummary(){
                                 // the finisher rides in the note line: what it was and how it went
                                 note:[a.repeat_of ? 'repeat' : '',
                                       a.finisher_name ? `finisher ${a.finisher_name}: ${a.finisher_result || 'no result'}`
-                                        : (a.finisher_mode === 'wheel' ? 'finisher: wheel, not spun' : ''),
+                                        : (a.drill_id && a.done ? 'finisher: the dice, not rolled' : ''),
                                       a.note || ''].filter(Boolean).join(' · ') || null}));
 
   let h = weekNavHtml(fmtRange(WEEK));
