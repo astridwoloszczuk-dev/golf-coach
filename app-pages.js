@@ -3521,14 +3521,16 @@ function scanHtml(){
   return `<div class="card"><div class="ct">Scorecard photos</div>
     <p class="empty" style="padding:0 0 10px">Front and/or back — one side is enough.</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">${slot(0,'Holes 1–9')}${slot(1,'Holes 10–18')}</div>
-    ${key?'':`<div class="fr"><label>Anthropic API key (stored on this device only)</label>
+    ${key?`<div style="font-size:11px;color:var(--mu);margin-bottom:8px">Key saved on this device · <a href="#" onclick="clearAnthKey();return false">Change key</a></div>`
+         :`<div class="fr"><label>Anthropic API key (stored on this device only)</label>
       <input type="text" id="ank" placeholder="sk-ant-…"><button class="btn btns" style="margin-top:6px" onclick="saveAnthKey()">Save key</button></div>`}
     <div id="scan-status" style="font-size:12px;min-height:18px;margin-bottom:8px"></div>
     <div class="rbtns">
       ${(scanFiles[0]||scanFiles[1])&&key?`<button class="btn btnp" onclick="runScan()">🔍 Analyse</button>`:''}
       <button class="btn" onclick="cancelRound()">Cancel</button></div></div>`;
 }
-function saveAnthKey(){ const k=gv('ank'); if(k){ localStorage.setItem('anthropic_key',k); renderRounds(); } }
+function saveAnthKey(){ const k=gv('ank').trim(); if(k){ localStorage.setItem('anthropic_key',k); renderRounds(); } }
+function clearAnthKey(){ localStorage.removeItem('anthropic_key'); renderRounds(); }
 
 /* Canvas downscale, shared by the two things that upload an image. They want
    genuinely different ceilings, so both are arguments rather than one compromise
@@ -3571,7 +3573,12 @@ async function runScan(){
     scanFiles=[null,null]; scanPreviews=[null,null];
     roundMode='manual'; renderRounds();
     setTimeout(()=>fillFromScan(data),80);
-  }catch(err){ if(st) st.innerHTML=`<span class="bad">✗ ${esc(err.message)}</span>`; }
+  }catch(err){
+    /* A dead key (deactivated, or mistyped) comes back as 401. Forget it so the
+       key field reappears instead of failing silently on every scan. */
+    if(err.status===401){ localStorage.removeItem('anthropic_key'); renderRounds();
+      const st2=el('scan-status'); if(st2) st2.innerHTML='<span class="bad">✗ That key was rejected — paste a new one above.</span>'; return; }
+    if(st) st.innerHTML=`<span class="bad">✗ ${esc(err.message)}</span>`; }
 }
 async function analyzeScorecard(images,apiKey){
   const content=[];
@@ -3627,7 +3634,7 @@ Return ONLY valid JSON, no markdown:
              'anthropic-dangerous-direct-browser-access':'true'},
     body:JSON.stringify({model:'claude-sonnet-5',max_tokens:16000,messages:[{role:'user',content}]}),
   });
-  if(!resp.ok){ const e=await resp.json().catch(()=>({})); throw new Error((e.error&&e.error.message)||('HTTP '+resp.status)); }
+  if(!resp.ok){ const e=await resp.json().catch(()=>({})); const err=new Error((e.error&&e.error.message)||('HTTP '+resp.status)); err.status=resp.status; throw err; }
   const data=await resp.json();
   if(data.stop_reason==='max_tokens')
     throw new Error('Ran out of room while reading the card (thinking + reply exceeded max_tokens). Try one side at a time, or lower the effort in analyzeScorecard.');
