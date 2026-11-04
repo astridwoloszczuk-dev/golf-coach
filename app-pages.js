@@ -168,6 +168,37 @@ function playedTo(r, course){
 
 const playedToTxt = pt => (pt.scaled ? '~' : '') + pt.val.toFixed(1);
 
+/* AERATED / WINTER GREENS — one box, one effect. Her design, 4 Nov 2026,
+   after a morning round on a course with every green and fairway just cored:
+
+     "putting is a bit of a luck thing - and so is chipping. the roll depends
+      massively on how many sandy holes you hit ... i maintain that it is
+      still worth playing, but tracking chipping and putting stats seems a
+      bit meaningless."
+
+   So the round is SPLIT, not dropped. OUTCOMES the surface decided — score to
+   par, played-to, putts, three-putts, up-and-downs, doubles, par-5 blow-ups —
+   do not get to speak for the others. FAULTS she decided — drive s/x,
+   approach m/x, a `c` she chose to write, penalties, bunkers, scoring
+   position, GIR — count exactly as on any other round: a pulled drive is a
+   pulled drive whatever the green is made of.
+
+   Not the "not counted" button: that drops the faults too, and the faults are
+   the only evidence a winter round has. Not two boxes (aerated, winter
+   greens): they do the same thing to the card, so they are one box.
+
+   THE SCORE STILL GOES ON THE CARD. Every figure in this file reads only
+   holes with both par and score, so a scoreless hole takes its faults with
+   it. The box says which score-derived numbers to ignore; it does not excuse
+   the score.
+
+   `countedStats` (beside getRoundStats) is getRoundStats with the outcome
+   keys nulled for such a round. The pools skip a null per round and per
+   key, so the fault columns keep their holes and the outcome columns lose
+   them. The round row itself still prints the score: it is history, and hers. */
+const OUTCOME_KEYS  = ['delta','ud','p3','putts','db','b5'];
+const outcomeCounts = r => !r.stats_excluded && !r.greens_aerated;
+
 /* FOUR BANDS, TWO SHOTS WIDE, AROUND THE GOAL — hers verbatim: "0 to +2 away
    from 8.9 amber, red above, light green for 0 to −2, bright green below".
    Boundaries inclusive downward, so 8.9 is light green and 10.9 is amber.
@@ -267,7 +298,7 @@ const GOAL_METRICS = {
     let tot = 0, ok = 0;
     const scored = h => h && String(h.par??'')!=='' && String(h.score??'')!=='';
     for (const r of R){
-      if (r.stats_excluded) continue;
+      if (!outcomeCounts(r)) continue;
       const hd = r.holes_data || [];
       for (let i = 0; i < hd.length-1; i++){
         if (!scored(hd[i]) || !scored(hd[i+1])) continue;
@@ -303,7 +334,7 @@ const GOAL_METRICS = {
      The cost, which she accepted: ~80 missed greens, so ±5 points is luck. */
   scramble(R){
     let missed = 0, ud = 0;
-    const last8 = R.filter(r => !r.stats_excluded && r.comp
+    const last8 = R.filter(r => outcomeCounts(r) && r.comp
                       && (r.holes_data||[]).some(h => String(h.score??'')!==''))
                    .sort((a,z) => a.date.localeCompare(z.date)).slice(-8);
     for (const r of last8){
@@ -364,7 +395,7 @@ const GOAL_METRICS = {
   counting_avg(R){
     const vals = [];
     for (const r of R){
-      if (r.stats_excluded || !r.comp || r.matchplay) continue;
+      if (!outcomeCounts(r) || !r.comp || r.matchplay) continue;
       const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
       if (!(p.length === 9 || p.length >= 17)) continue;   // complete for its format
       const pt = playedTo(r);
@@ -392,7 +423,7 @@ const GOAL_METRICS = {
   best_comp_round(R){
     let best = null, when = null;
     for (const r of R){
-      if (r.stats_excluded || !r.comp || r.matchplay) continue;
+      if (!outcomeCounts(r) || !r.comp || r.matchplay) continue;
       const p = (r.holes_data||[]).filter(h => String(h.par??'')!=='' && String(h.score??'')!=='');
       if (p.length !== 18) continue;
       const gross = p.reduce((a,h)=>a+Number(h.score), 0);
@@ -423,7 +454,7 @@ const GOAL_METRICS = {
      the same evidence expressed in the only unit that was available then. */
   comp_social_gap(R){
     const agg = f => { const v = [];
-      for (const r of R){ if (r.stats_excluded || !f(r)) continue;
+      for (const r of R){ if (!outcomeCounts(r) || !f(r)) continue;
         const pt = playedTo(r); if (pt) v.push(pt.val); }
       return v.length >= 2 ? v.reduce((a,x)=>a+x,0)/v.length : null; };
     const c = agg(r=>r.comp), so = agg(r=>!r.comp);
@@ -2659,6 +2690,12 @@ function getRoundStats(r){
           p3:null, db:null, b5:null, pen:null, bs:null, drvS:null, drvX:null, appM:null, appW:null,
           appX:null, shC:null, putts:null, penStk:null, bunk:null, hero:null};
 }
+// getRoundStats minus what an aerated/winter-greens round cannot testify to.
+function countedStats(r){
+  const s = getRoundStats(r);
+  if (r.greens_aerated) for (const k of OUTCOME_KEYS) s[k] = null;
+  return s;
+}
 
 function roundStatsHtml(){
   if (!ROUNDS.length) return '';
@@ -2666,7 +2703,7 @@ function roundStatsHtml(){
   // stats_excluded rounds stay in history and stay hers — they just don't get
   // to speak for the others. A half-entered card is not a small sample, it is a
   // biased one, and averaging it in is worse than not having it.
-  const rs=ROUNDS.filter(r=>!r.stats_excluded).map(r=>{const s=getRoundStats(r);return {...s,comp:!!r.comp};});
+  const rs=ROUNDS.filter(r=>!r.stats_excluded).map(r=>{const s=countedStats(r);return {...s,comp:!!r.comp};});
   const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
   const f1=v=>v==null?'—':(Math.round(v*10)/10).toFixed(1);
   const sg=v=>v==null?'':((v>0?'+':'')+(Math.round(v*10)/10).toFixed(1));
@@ -2679,7 +2716,7 @@ function roundStatsHtml(){
      course-fair reading sits under it, averaged over the rounds that HAVE a
      figure (rated course, 9+ holes), so the two lines can draw on slightly
      different rounds — a holiday course counts above and not below. */
-  const sP=g=>mean(ROUNDS.filter(r=>!r.stats_excluded&&g(!!r.comp)).map(r=>playedTo(r)).filter(Boolean).map(pt=>pt.val));
+  const sP=g=>mean(ROUNDS.filter(r=>outcomeCounts(r)&&g(!!r.comp)).map(r=>playedTo(r)).filter(Boolean).map(pt=>pt.val));
   const pAll=sP(()=>true), pComp=sP(c=>c), pNorm=sP(c=>!c);
   const pLine=v=>v==null?'':`<div style="font-size:12px;font-weight:600;color:${playedToBand(v)};margin-top:2px">played to ${v.toFixed(1)}</div>`;
   const M=[
@@ -2909,6 +2946,7 @@ function historyHtml(){
             ? `<button class="btn btns" onclick="sendRoundToWes(${r.id},true)" style="opacity:.6"
                  title="Already sent to ${esc(TEACHER_NAME)} once. Send again if you have edited the card or added the feelings.">→ ✓</button>`
             : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→</button>`):''}
+          ${r.greens_aerated?'<span class="bp" title="Aerated or winter greens: score, putts and saves not counted; the fault codes are">aerated</span>':''}
           ${r.stats_excluded?'<span class="bp" title="Kept in history, left out of every statistic">not counted</span>':''}
           ${ME.role==='student'?`<button class="btn btns" onclick="toggleExcluded(${r.id})" title="${r.stats_excluded?'Count this round in the statistics':'Keep this round but leave it out of the statistics'}">${r.stats_excluded?'∅':'⌀'}</button>
           <button class="btn btns" onclick="editRound(${r.id})">✎</button>
@@ -3152,6 +3190,7 @@ function simpleFormHtml(){
     <div class="fr" style="display:flex;align-items:center;gap:18px;margin:6px 0 14px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="sr_co" style="width:18px;height:18px;accent-color:var(--ac)">Competitive</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="sr_pr" onchange="toggleFocus('sr')" style="width:18px;height:18px;accent-color:var(--gn)">On-course practice</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Aerated or winter greens: the score, putts and saves stay on the card but are not counted; the fault codes are."><input type="checkbox" id="sr_ag" style="width:18px;height:18px;accent-color:var(--mu)">Aerated / winter greens</label>
     </div>
     ${focusBlockHtml('sr')}
     <div class="fr"><label>Notes</label><textarea id="sr_n" rows="2"></textarea></div>
@@ -3198,6 +3237,7 @@ function cardFormHtml(){
            is what the exclusion exists to prevent — a conceded hole is a blank,
            and blanks make a card look better than the golf was. -->
       <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Match, not stroke play. Kept out of the scoring trend, best-round and away-round counts — conceded holes make a card uncomparable."><input type="checkbox" id="rf_mp" style="width:18px;height:18px;accent-color:var(--ye)">Matchplay</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Aerated or winter greens: the score, putts and saves stay on the card but are not counted; the fault codes are."><input type="checkbox" id="rf_ag" style="width:18px;height:18px;accent-color:var(--mu)">Aerated / winter greens</label>
     </div>
     ${focusBlockHtml('rf')}
     <div class="dl">Holes</div>
@@ -3266,6 +3306,7 @@ function fillFormFromRound(){
     if(el('sr_h')) el('sr_h').value=String(r.holes||18);
     if(el('sr_co'))el('sr_co').checked=!!r.comp;
     if(el('sr_pr'))el('sr_pr').checked=!!r.practice;
+    if(el('sr_ag'))el('sr_ag').checked=!!r.greens_aerated;
     toggleFocus('sr'); setFoci('sr', r.practice_focus);
     if(el('sr_drill'))el('sr_drill').value=r.practice_drill||'';
     if(el('sr_n')) el('sr_n').value=r.notes||'';
@@ -3286,6 +3327,7 @@ function fillFormFromRound(){
     if(el('rf_co'))el('rf_co').checked=!!r.comp;
     if(el('rf_pr'))el('rf_pr').checked=!!r.practice;
     if(el('rf_mp'))el('rf_mp').checked=!!r.matchplay;
+    if(el('rf_ag'))el('rf_ag').checked=!!r.greens_aerated;
     toggleFocus('rf'); setFoci('rf', r.practice_focus);
     if(el('rf_drill'))el('rf_drill').value=r.practice_drill||'';
     (r.holes_data||[]).forEach((hd,i)=>{
@@ -3455,6 +3497,7 @@ async function saveSimpleRound(){
     comp:el('sr_co').checked, practice:el('sr_pr').checked,
     practice_focus:getFoci('sr'), practice_drill:(el('sr_drill')?el('sr_drill').value.trim():'')||null,
     notes:gv('sr_n')||null, holes_data:null, is_simple:true,
+    greens_aerated:!!(el('sr_ag')&&el('sr_ag').checked),
   });
 }
 async function saveCardRound(){
@@ -3485,6 +3528,7 @@ async function saveCardRound(){
     practice_focus:getFoci('rf'), practice_drill:(el('rf_drill')?el('rf_drill').value.trim():'')||null,
     notes:gv('rf_n')||null, holes_data, is_simple:false, holes:cardHoles,
     matchplay:el('rf_mp')?el('rf_mp').checked:false,
+    greens_aerated:!!(el('rf_ag')&&el('rf_ag').checked),
   });
 }
 async function toggleExcluded(id){
@@ -4404,9 +4448,13 @@ function gapTableHtml(all){
   if (!soc.length || !cmp.length)
     return `<div class="empty">Needs at least one of each \u2014 ${soc.length} social, ${cmp.length} competition.</div>`;
   const agg = function(list){
-    const st = list.map(getRoundStats).filter(x=>x.n);
+    const st = list.map(countedStats).filter(x=>x.n);
     const n  = st.reduce((a,x)=>a+x.n,0);
-    const per18 = k => n ? (st.reduce((a,x)=>a+(x[k]||0),0)*18/n) : null;
+    // Per key, over the rounds that HAVE the figure. An aerated round has no
+    // putts figure (and a card with no putts written never had one); dividing
+    // its zero by its holes would read as fewer putts, not as none.
+    const per18 = k => { const xs = st.filter(x=>x[k]!=null); const nk = xs.reduce((a,x)=>a+x.n,0);
+                         return nk ? xs.reduce((a,x)=>a+x[k],0)*18/nk : null; };
     return {rounds:st.length, delta:per18('delta'),
             quad: n ? st.reduce((a,x)=>a+(x.posHit||0),0)*100/n : null,
             gir:per18('gir'), putts:per18('putts'), pen:per18('pen'), db:per18('db')};
@@ -4438,7 +4486,7 @@ function gapTableHtml(all){
           <td style="${cell};font-weight:700;color:${gap==null?'var(--mu)':bad?'var(--rd)':'var(--gn)'}">
             ${gap==null?'\u2014':(gap>0?'+':'')+Number(gap).toFixed(d)}</td></tr>`; }).join('')}
       </tbody></table></div>
-    <div style="font-size:10.5px;color:var(--mu);margin-top:8px">Everything per 18 holes so part-rounds compare honestly. Excluded rounds left out. Red means competition is the worse of the two.</div>`;
+    <div style="font-size:10.5px;color:var(--mu);margin-top:8px">Everything per 18 holes so part-rounds compare honestly. Excluded rounds left out; aerated-greens rounds count for position and GIR only. Red means competition is the worse of the two.</div>`;
 }
 
 /* ── Breathwork, and nothing else ────────────────────────────────
@@ -4725,6 +4773,7 @@ async function renderSummary(){
         ${s.posPct!=null?`<span style="font-weight:700;color:var(--tx)">Pos:${s.posPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
+        ${r.greens_aerated?'<span class="bp" title="Aerated or winter greens: score, putts and saves not counted; the fault codes are">aerated</span>':''}
         ${r.stats_excluded?'<span class="bp">not counted</span>':''}</div>
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}
