@@ -2459,7 +2459,8 @@ function roundsLegendHtml(){
       <b>Short</b> C choked a makeable save \u2014 successful saves are derived, not ticked<br>
       <b>Trbl</b> W water \u00b7 O OB \u00b7 U unplayable <i>(these carry a penalty stroke)</i> \u00b7 FB/GB bunker, no stroke<br>
       <b>MP</b> matchplay only: + won the hole \u00b7 \u2212 lost it \u00b7 . halved \u2014 a conceded hole gets a mark and <b>no score</b>, never a guess<br>
-      <b>GIR</b> green in regulation \u00b7 <b>Putts</b> count
+      <b>GIR</b> green in regulation \u00b7 <b>Putts</b> count<br>
+      <b>Aerated</b> winter or cored greens: score, putts and saves stay on the card but count nowhere \u2014 the fault codes still count
     </div>`)
   + row('Printable card', printOpen, 'togglePrint()',
     `<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.6">
@@ -3647,10 +3648,10 @@ For each hole return:
 - putts: number of putts written (integer, null if blank)
 - trbl: Trbl cell letters exactly (W, O, U, FB or GB), or "" if blank
 
-Also extract: date ("YYYY-MM-DD" or null), course (or null), comp (true/false), practice (true/false), notes (or null).
+Also extract: date ("YYYY-MM-DD" or null), course (or null), comp (true/false), practice (true/false), aerated (true/false: the third header box, "Aerated", ticked or not), notes (or null).
 
 Return ONLY valid JSON, no markdown:
-{"date":null,"course":null,"comp":false,"practice":false,"notes":null,"holes":[{"hole":1,"par":4,"score":5,"drive":"","gir":false,"app":"m","short":"","putts":2,"trbl":""}]}`});
+{"date":null,"course":null,"comp":false,"practice":false,"aerated":false,"notes":null,"holes":[{"hole":1,"par":4,"score":5,"drive":"","gir":false,"app":"m","short":"","putts":2,"trbl":""}]}`});
 
   /* SONNET 5, 14 Aug — was claude-haiku-4-5. Her call: Haiku was not reading the
      handwriting well enough, and she checks every scanned card against the paper
@@ -3712,6 +3713,7 @@ function fillFromScan(d){
   if(d.notes&&el('rf_n'))  el('rf_n').value=d.notes;
   if(el('rf_co')) el('rf_co').checked=!!d.comp;
   if(el('rf_pr')) el('rf_pr').checked=!!d.practice;
+  if(el('rf_ag')) el('rf_ag').checked=!!d.aerated;
   toggleFocus('rf');
   (d.holes||[]).forEach(h=>{
     const i=h.hole!=null?Number(h.hole)-1:null;

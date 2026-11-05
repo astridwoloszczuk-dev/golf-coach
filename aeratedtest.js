@@ -64,6 +64,7 @@ global.requestAnimationFrame = f => setTimeout(f, 0);
 global.CustomEvent = class {}; global.Event = class {};
 global.fetch = async () => ({ ok:true, status:200, headers:{get:()=>null}, json:async()=>[], text:async()=>'[]' });
 global.__PAGES_SRC = pagesSrc;
+global.__SHEET_SRC = fs.readFileSync(`${dir}/scorecard_print.html`, 'utf8');
 
 const harness = `
 ${inline.join('\n;\n')}
@@ -165,6 +166,19 @@ ${externals.join('\n;\n')}
 
   // ── 7 · the badge ──────────────────────────────────────────────────────
   check('the rounds list shows the badge', __PAGES_SRC.indexOf('>aerated</span>') !== -1, true);
+
+  // ── 8 · the paper card and the scan agree with the form ────────────────
+  // The print sheet carries the box, the scan prompt asks for it, and a scan
+  // that read it ticks rf_ag — otherwise a photographed winter card lands in
+  // the stats as a summer one, which is the quiet failure the box exists for.
+  check('the print sheet has the Aerated box', /comp-lbl">Aerated</.test(__SHEET_SRC), true);
+  check('the scan prompt asks for it', __PAGES_SRC.indexOf('"aerated":false') !== -1, true);
+  cardHoles = BASE_HOLES; editId = null; cardFormHtml();
+  document.getElementById('rf_ag').checked = false;
+  fillFromScan({ date:'2026-11-05', comp:false, practice:false, aerated:true, notes:null, holes:[] });
+  check('a scanned tick lands on the form', document.getElementById('rf_ag').checked, true);
+  fillFromScan({ date:'2026-11-05', comp:false, practice:false, notes:null, holes:[] });
+  check('...and a card without the key clears it', document.getElementById('rf_ag').checked, false);
 
   console.log('');
   console.log(fails ? fails + ' FAILURE(S)' : 'all aerated-greens checks passed');
