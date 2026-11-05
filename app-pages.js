@@ -2434,6 +2434,12 @@ let legendOpen = false, printOpen = false;
    history holds 117 days of sleep/HRV/resting-HR snapshots. Edit THIS copy;
    the one in goal-tracker is frozen. */
 const SCORECARD_URL = 'scorecard_print.html';
+/* The sheet opens in a new tab, and GitHub Pages sends it with a ten-minute
+   cache header; a phone that printed last month then re-opens LAST MONTH'S
+   card, which is how the Aerated box went missing on 5 Nov the day after it
+   shipped. A fresh query string per click makes the browser fetch it. The
+   page is opened a few times a season, so there is nothing to save by caching. */
+const scorecardHref = () => SCORECARD_URL + '?v=' + Date.now();
 function toggleLegend(){ legendOpen = !legendOpen; renderRounds(); }
 function togglePrint(){ printOpen = !printOpen; renderRounds(); }
 function roundsLegendHtml(){
@@ -2466,7 +2472,7 @@ function roundsLegendHtml(){
     `<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.6">
       Four cards to an A4 sheet, front and back.
       <div class="rbtns" style="margin-top:9px">
-        <a class="btn btnp btns" href="${SCORECARD_URL}" target="_blank" rel="noopener"
+        <a class="btn btnp btns" href="${scorecardHref()}" target="_blank" rel="noopener"
            style="text-decoration:none">Open the print sheet</a>
       </div>
       <div style="margin-top:8px;font-size:11px">
