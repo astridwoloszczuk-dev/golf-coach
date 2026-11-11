@@ -196,8 +196,14 @@ const playedToTxt = pt => (pt.scaled ? '~' : '') + pt.val.toFixed(1);
    keys nulled for such a round. The pools skip a null per round and per
    key, so the fault columns keep their holes and the outcome columns lose
    them. The round row itself still prints the score: it is history, and hers. */
-const OUTCOME_KEYS  = ['delta','ud','p3','putts','db','b5'];
-const outcomeCounts = r => !r.stats_excluded && !r.greens_aerated;
+/* REVERSED 11 Nov 2026 (her call, after Wes: "good putters can putt on anything"):
+   an aerated round now counts in full, putts and score included. The box stays
+   as a FLAG only: the badge on the round, the column for filtering later, and
+   the marker for the shorter winter-greens course. OUTCOME_KEYS is empty, so
+   countedStats == getRoundStats; the helpers stay so every pool keeps one
+   place to change if she ever splits a round again. */
+const OUTCOME_KEYS  = [];
+const outcomeCounts = r => !r.stats_excluded;
 
 /* FOUR BANDS, TWO SHOTS WIDE, AROUND THE GOAL — hers verbatim: "0 to +2 away
    from 8.9 amber, red above, light green for 0 to −2, bright green below".
@@ -2466,7 +2472,7 @@ function roundsLegendHtml(){
       <b>Trbl</b> W water \u00b7 O OB \u00b7 U unplayable <i>(these carry a penalty stroke)</i> \u00b7 FB/GB bunker, no stroke<br>
       <b>MP</b> matchplay only: + won the hole \u00b7 \u2212 lost it \u00b7 . halved \u2014 a conceded hole gets a mark and <b>no score</b>, never a guess<br>
       <b>GIR</b> green in regulation \u00b7 <b>Putts</b> count<br>
-      <b>Aerated</b> winter or cored greens: score, putts and saves stay on the card but count nowhere \u2014 the fault codes still count
+      <b>Aerated</b> winter or cored greens: flagged only; the round counts like any other
     </div>`)
   + row('Printable card', printOpen, 'togglePrint()',
     `<div style="font-size:11.5px;color:var(--mu);margin-top:9px;line-height:1.6">
@@ -2953,7 +2959,7 @@ function historyHtml(){
             ? `<button class="btn btns" onclick="sendRoundToWes(${r.id},true)" style="opacity:.6"
                  title="Already sent to ${esc(TEACHER_NAME)} once. Send again if you have edited the card or added the feelings.">→ ✓</button>`
             : `<button class="btn btns" onclick="sendRoundToWes(${r.id})" title="Send this comp round to ${esc(TEACHER_NAME)} on Signal">→</button>`):''}
-          ${r.greens_aerated?'<span class="bp" title="Aerated or winter greens: score, putts and saves not counted; the fault codes are">aerated</span>':''}
+          ${r.greens_aerated?'<span class="bp" title="Aerated or winter greens: flagged only, the round counts in full">aerated</span>':''}
           ${r.stats_excluded?'<span class="bp" title="Kept in history, left out of every statistic">not counted</span>':''}
           ${ME.role==='student'?`<button class="btn btns" onclick="toggleExcluded(${r.id})" title="${r.stats_excluded?'Count this round in the statistics':'Keep this round but leave it out of the statistics'}">${r.stats_excluded?'∅':'⌀'}</button>
           <button class="btn btns" onclick="editRound(${r.id})">✎</button>
@@ -3197,7 +3203,7 @@ function simpleFormHtml(){
     <div class="fr" style="display:flex;align-items:center;gap:18px;margin:6px 0 14px;flex-wrap:wrap">
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="sr_co" style="width:18px;height:18px;accent-color:var(--ac)">Competitive</label>
       <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input type="checkbox" id="sr_pr" onchange="toggleFocus('sr')" style="width:18px;height:18px;accent-color:var(--gn)">On-course practice</label>
-      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Aerated or winter greens: the score, putts and saves stay on the card but are not counted; the fault codes are."><input type="checkbox" id="sr_ag" style="width:18px;height:18px;accent-color:var(--mu)">Aerated / winter greens</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Aerated or winter greens: a flag only; the round counts in full."><input type="checkbox" id="sr_ag" style="width:18px;height:18px;accent-color:var(--mu)">Aerated / winter greens</label>
     </div>
     ${focusBlockHtml('sr')}
     <div class="fr"><label>Notes</label><textarea id="sr_n" rows="2"></textarea></div>
@@ -3244,7 +3250,7 @@ function cardFormHtml(){
            is what the exclusion exists to prevent — a conceded hole is a blank,
            and blanks make a card look better than the golf was. -->
       <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Match, not stroke play. Kept out of the scoring trend, best-round and away-round counts — conceded holes make a card uncomparable."><input type="checkbox" id="rf_mp" style="width:18px;height:18px;accent-color:var(--ye)">Matchplay</label>
-      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Aerated or winter greens: the score, putts and saves stay on the card but are not counted; the fault codes are."><input type="checkbox" id="rf_ag" style="width:18px;height:18px;accent-color:var(--mu)">Aerated / winter greens</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px" title="Aerated or winter greens: a flag only; the round counts in full."><input type="checkbox" id="rf_ag" style="width:18px;height:18px;accent-color:var(--mu)">Aerated / winter greens</label>
     </div>
     ${focusBlockHtml('rf')}
     <div class="dl">Holes</div>
@@ -4494,7 +4500,7 @@ function gapTableHtml(all){
           <td style="${cell};font-weight:700;color:${gap==null?'var(--mu)':bad?'var(--rd)':'var(--gn)'}">
             ${gap==null?'\u2014':(gap>0?'+':'')+Number(gap).toFixed(d)}</td></tr>`; }).join('')}
       </tbody></table></div>
-    <div style="font-size:10.5px;color:var(--mu);margin-top:8px">Everything per 18 holes so part-rounds compare honestly. Excluded rounds left out; aerated-greens rounds count for position and GIR only. Red means competition is the worse of the two.</div>`;
+    <div style="font-size:10.5px;color:var(--mu);margin-top:8px">Everything per 18 holes so part-rounds compare honestly. Excluded rounds left out. Red means competition is the worse of the two.</div>`;
 }
 
 /* ── Breathwork, and nothing else ────────────────────────────────
@@ -4781,7 +4787,7 @@ async function renderSummary(){
         ${s.posPct!=null?`<span style="font-weight:700;color:var(--tx)">Pos:${s.posPct}%</span>`:''}
         ${s.gir!=null?`<span>GIR:${s.gir}</span>`:''}${s.p3!=null?`<span>3P:${s.p3}</span>`:''}
         ${s.db!=null?`<span>Dbl:${s.db}</span>`:''}${s.pen?`<span>Pen:${s.pen}</span>`:''}
-        ${r.greens_aerated?'<span class="bp" title="Aerated or winter greens: score, putts and saves not counted; the fault codes are">aerated</span>':''}
+        ${r.greens_aerated?'<span class="bp" title="Aerated or winter greens: flagged only, the round counts in full">aerated</span>':''}
         ${r.stats_excluded?'<span class="bp">not counted</span>':''}</div>
       ${r.practice&&((r.practice_focus&&r.practice_focus.length)||r.practice_drill)?
         `<div style="font-size:12px;color:var(--gn);margin-top:4px">🎯 ${fociLabels(r.practice_focus).map(esc).join(' · ')}${r.practice_drill?` — <span style="color:var(--mu);font-style:italic">${esc(r.practice_drill)}</span>`:''}</div>`:''}

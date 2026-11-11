@@ -2,6 +2,8 @@
 /*
  * aeratedtest.js — the aerated / winter-greens box, 4 Nov 2026.
  *
+ * 11 Nov 2026: REVERSED. The box is a flag only now; checks 1-4 assert the round
+ * counts in full. Original design (4 Nov) for the record:
  * WHY. The box splits a round in two: the outcomes the surface decided (score,
  * played-to, putts, three-putts, saves, doubles) stop counting, the faults she
  * decided (drive, approach, c, penalties, position, GIR) keep counting. That
@@ -105,37 +107,19 @@ ${externals.join('\n;\n')}
   const aer   = mk(4,'2026-11-04',{greens_aerated:true});
   const excl  = mk(5,'2026-11-05',{stats_excluded:true});
 
-  // ── 1 · countedStats nulls the outcome keys only ───────────────────────
+  // ── 1–4 · since 11 Nov 2026 an aerated round counts in full (flag only) ──
   const full = getRoundStats(aer), cut = countedStats(aer);
-  check('outcome keys are nulled', ['delta','ud','p3','putts','db','b5'].map(k => cut[k]), [null,null,null,null,null,null]);
-  check('...and had values before', [full.delta, full.p3, full.db], [16, 2, 1]);
-  check('fault keys survive', [cut.drvX, cut.appM, cut.shC, cut.penStk, cut.gir, cut.n], [1, 1, 1, 1, 3, 18]);
-  check('scoring position survives', cut.posPct, full.posPct);
-  check('a plain round is untouched', countedStats(plain[0]).delta, 16);
-
-  // ── 2 · outcomeCounts ──────────────────────────────────────────────────
-  check('aerated does not count for outcomes', outcomeCounts(aer), false);
-  check('not-counted does not either', outcomeCounts(excl), false);
+  check('countedStats == getRoundStats for an aerated round', JSON.stringify(cut), JSON.stringify(full));
+  check('aerated counts for outcomes', outcomeCounts(aer), true);
+  check('not-counted still does not', outcomeCounts(excl), false);
   check('a plain round does', outcomeCounts(plain[0]), true);
-
-  // ── 3 · goal tiles skip it ─────────────────────────────────────────────
   const avg3 = GOAL_METRICS.counting_avg(plain).val, avg4 = GOAL_METRICS.counting_avg(plain.concat([aer])).val;
-  check('counting_avg ignores the aerated round', avg4, avg3);
-  const sc3 = GOAL_METRICS.scramble(plain).txt, sc4 = GOAL_METRICS.scramble(plain.concat([aer])).txt;
-  check('scramble ignores the aerated round', sc4, sc3);
-  const bestAer = mk(6,'2026-11-06',{greens_aerated:true});
-  bestAer.holes_data.forEach(h => { h.score = h.par; });   // a 72 on sand is not a best round
-  check('best round ignores the aerated round', GOAL_METRICS.best_comp_round(plain.concat([bestAer])).txt.indexOf('needs 79') !== -1, true);
-  check('post_birdie ignores the aerated round', GOAL_METRICS.post_birdie([aer]).txt, '0/0 — too few birdies yet');
-
-  // ── 4 · social-vs-comp table ───────────────────────────────────────────
+  check('counting_avg reads the aerated round like a plain one', avg4, avg3);
   const soc = mk(7,'2026-11-07',{comp:false, greens_aerated:true});
   const tbl = gapTableHtml([soc, plain[0]]);
   const cellsOf = label => { const m = tbl.match(new RegExp(label + '</td>\\\\s*<td[^>]*>([^<]*)</td>\\\\s*<td[^>]*>([^<]*)</td>')); return m ? [m[1].trim(), m[2].trim()] : null; };
-  check('putts: social side is a dash, comp side a figure', cellsOf('Putts /18'), ['—', '38.0']);
-  check('score: social side is a dash', cellsOf('Score vs par /18')[0], '—');
-  check('position: social side still has a figure', cellsOf('Scoring position %')[0] !== '—', true);
-  check('the table says so', tbl.indexOf('aerated-greens rounds count for position and GIR only') !== -1, true);
+  check('putts: the aerated social side has a figure', cellsOf('Putts /18'), ['38.0', '38.0']);
+  check('the old caveat is gone', tbl.indexOf('count for position and GIR only') === -1, true);
 
   // ── 5 · the forms write it ─────────────────────────────────────────────
   cardHoles = BASE_HOLES; editId = null;
